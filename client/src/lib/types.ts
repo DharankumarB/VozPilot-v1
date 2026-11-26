@@ -40,12 +40,18 @@ export interface Agent {
   description: string;
   icon: string;
   status: AgentStatus;
+  enabled?: boolean;
+  systemInstructions?: string | null;
+  timeoutSeconds?: number;
+  maxRetries?: number;
   responsibilities: string[];
   config: Record<string, unknown>;
+  currentTask?: { id: string; title: string; executionId: string | null } | null;
   lastActiveAt: string | null;
   createdAt: string;
   updatedAt: string;
   taskCounts: { total: number; open: number; completed: number };
+  agentTaskCounts?: { total: number; running: number; completed: number; failed: number };
 }
 
 export interface Task {
@@ -141,6 +147,12 @@ export interface Approval {
   agentId: string | null;
   agentName: string | null;
   agentIcon: string | null;
+  executionId?: string | null;
+  agentTaskId?: string | null;
+  actionType?: string | null;
+  actionPayload?: Record<string, unknown>;
+  executedAt?: string | null;
+  executionResult?: Record<string, unknown> | null;
 }
 
 export type IntegrationProvider = 'gmail' | 'google_calendar' | 'github' | 'google_drive' | 'notion';
@@ -153,6 +165,8 @@ export interface Integration {
   lastError: string | null;
   connectedAt: string | null;
   updatedAt: string;
+  oauthConfigured?: boolean;
+  authUrl?: string | null;
 }
 
 export interface ActivityItem {

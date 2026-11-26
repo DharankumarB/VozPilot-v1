@@ -1,4 +1,4 @@
-/** VozCore engine client — Phase 2 orchestration types + calls. */
+/** VozCore engine client — Phase 2 + Phase 3 multi-agent orchestration types + calls. */
 
 import { api } from './api';
 
@@ -9,6 +9,9 @@ export interface VozCoreHealth {
   engine: string;
   phase: number;
   database: string;
+  agentsPaused?: boolean;
+  pricingConfigured?: boolean;
+  searchConfigured?: boolean;
   llm: { configured: boolean; mode: 'openai' | 'unconfigured' | 'test-fake'; model: string | null };
   graph: { nodes: string[]; conditionalRouting: boolean; parallelExecution: boolean; boundedRetries: boolean; checkpoints: string };
   limits: { maxTasks: number; maxAttempts: number; taskTimeoutSeconds: number; executionTimeoutSeconds: number };
@@ -20,16 +23,30 @@ export interface VozCoreAgent {
   agentId?: string;
   name: string;
   status: string;
+  enabled?: boolean;
   role: string;
   capabilities: string[];
+  tools?: string[];
   operational: boolean;
   executionMode: 'llm';
+  timeoutSeconds?: number;
+  maxRetries?: number;
+  lastActiveAt?: string | null;
   notes?: string | null;
 }
 
 export interface VozCoreAgentsPayload {
-  coordinator: { key: string; name: string; role: string; status: string; operational: boolean; executionMode: 'llm' };
+  coordinator: {
+    key: string;
+    name: string;
+    role: string;
+    status: string;
+    enabled?: boolean;
+    operational: boolean;
+    executionMode: 'llm';
+  };
   agents: VozCoreAgent[];
+  agentsPaused?: boolean;
   llmMode: string;
 }
 
@@ -80,6 +97,7 @@ export interface ExecutionStep {
 }
 
 export interface ExecutionTask {
+  id?: string;
   task_key: string;
   agent_key: string;
   agent_id: string | null;
@@ -98,17 +116,41 @@ export interface ExecutionTask {
   created_at: string;
 }
 
+export interface ResultArtifact {
+  kind: string;
+  title: string;
+  content?: unknown;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SourceReference {
+  title: string;
+  url?: string | null;
+  provider?: string;
+  snippet?: string | null;
+  verified?: boolean;
+}
+
 export interface ExecutionResult {
   agentTaskId: string;
   taskKey: string;
   attempt: number;
   agent_key: string;
-  status: 'completed' | 'failed';
+  status: 'completed' | 'failed' | 'waiting_approval' | 'cancelled';
   result_summary: string;
+  summary?: string;
   detailed_output: string;
+  artifacts?: ResultArtifact[];
+  source_references?: SourceReference[];
   missing_information: string[];
   errors: string[];
+  error_details?: Record<string, unknown> | string[] | null;
   model: string | null;
+  durationMs?: number | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  totalTokens?: number | null;
+  estimatedCostUsd?: number | null;
   startedAt: string;
   finishedAt: string | null;
 }
@@ -120,13 +162,208 @@ export interface ExecutionEvent {
   createdAt: string;
 }
 
+export interface AgentMessageDto {
+  id: string;
+  executionId: string | null;
+  taskId: string | null;
+  senderKey: string;
+  recipientKey: string;
+  messageType: string;
+  subject: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
 export interface ExecutionDetail {
   execution: Execution;
   steps: ExecutionStep[];
   tasks: ExecutionTask[];
   results: ExecutionResult[];
+  messages?: AgentMessageDto[];
   events: ExecutionEvent[];
   lastEventId: number;
+}
+
+export interface AgentCapabilityDto {
+  id: string;
+  capabilityKey: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  updatedAt: string;
+}
+
+export interface AgentToolDto {
+  id: string;
+  toolKey: string;
+  label: string;
+  description: string;
+  provider: string | null;
+  requiresApproval: boolean;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  updatedAt: string;
+}
+
+export interface AgentPermissionDto {
+  id: string;
+  permissionKey: string;
+  scope: string;
+  allowed: boolean;
+  requiresApproval: boolean;
+  rateLimitPerHour: number;
+  maxTasksPerRun: number;
+  updatedAt: string;
+}
+
+export interface AgentExecutionLogDto {
+  id: string;
+  executionId: string | null;
+  agentTaskId: string | null;
+  agentKey?: string;
+  level: 'info' | 'warn' | 'error';
+  action: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  durationMs: number | null;
+  createdAt: string;
+}
+
+export interface AgentDetailPayload {
+  agent: {
+    id: string;
+    key: string;
+    name: string;
+    description: string;
+    icon: string;
+    status: 'active' | 'idle' | 'paused' | 'error';
+    enabled: boolean;
+    customInstructions: string | null;
+    defaultInstructions: string;
+    responsibilities: string[];
+    config: Record<string, unknown>;
+    timeoutSeconds: number;
+    maxRetries: number;
+    retryBackoffSeconds: number;
+    currentTask: { id: string; title: string; executionId: string | null } | null;
+    lastActiveAt: string | null;
+    updatedAt: string;
+  };
+  agentsPaused: boolean;
+  capabilities: AgentCapabilityDto[];
+  tools: AgentToolDto[];
+  permissions: AgentPermissionDto[];
+  metrics: {
+    totalTasks: number;
+    completedTasks: number;
+    failedTasks: number;
+    runningTasks: number;
+    waitingTasks: number;
+    retriedTasks: number;
+    avgDurationMs: number | null;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    usageCalls: number;
+    pricingConfigured: boolean;
+    estimatedCostUsd: number | null;
+  };
+  taskHistory: {
+    id: string;
+    executionId: string;
+    taskKey: string;
+    title: string;
+    description: string;
+    status: string;
+    attempts: number;
+    maxAttempts: number;
+    approvalRequired: boolean;
+    error: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+    createdAt: string;
+  }[];
+  logs: AgentExecutionLogDto[];
+  messages: AgentMessageDto[];
+}
+
+export interface MonitoringSummary {
+  agentsPaused: boolean;
+  llmConfigured: boolean;
+  llmMode: string;
+  model: string | null;
+  pricingConfigured: boolean;
+  agents: {
+    id: string;
+    key: string;
+    name: string;
+    icon: string;
+    status: string;
+    enabled: boolean;
+    operational: boolean;
+    currentTaskTitle: string | null;
+    lastActiveAt: string | null;
+    completedTasks: number;
+    failedTasks: number;
+    runningTasks: number;
+  }[];
+  executions: {
+    total: number;
+    running: number;
+    waiting: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+  };
+  tasks: {
+    failed: number;
+    retried: number;
+    running: number;
+  };
+  usage: {
+    calls: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    avgDurationMs: number | null;
+    estimatedCostUsd: number | null;
+  };
+  recentLogs: AgentExecutionLogDto[];
+}
+
+export interface ContentDraftDto {
+  id: string;
+  title: string;
+  contentType: string;
+  brandName: string;
+  channel: string | null;
+  body: string;
+  metadata: Record<string, unknown>;
+  status: 'draft' | 'pending_approval' | 'approved' | 'published' | 'archived';
+  approvalId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DirectAgentTestResult {
+  execution: Execution;
+  result: {
+    execution_id: string;
+    task_id: string;
+    agent_id: string;
+    status: 'completed' | 'failed' | 'waiting_approval' | 'cancelled';
+    summary: string;
+    detailed_output: string;
+    artifacts: ResultArtifact[];
+    source_references: SourceReference[];
+    error_details: Record<string, unknown> | string[] | null;
+    start_time: string;
+    completion_time: string;
+    duration_ms?: number | null;
+    model?: string | null;
+    total_tokens?: number | null;
+    estimated_cost_usd?: number | null;
+  };
 }
 
 export const LIVE_STATUSES: ExecutionStatus[] = ['planning', 'running', 'waiting'];
@@ -137,7 +374,40 @@ export function isLiveStatus(status: ExecutionStatus): boolean {
 
 export const vozcore = {
   health: () => api.get<VozCoreHealth>('/api/vozcore/health'),
+  monitoring: () => api.get<MonitoringSummary>('/api/vozcore/monitoring'),
   agents: () => api.get<VozCoreAgentsPayload>('/api/vozcore/agents'),
+  pauseAll: () => api.post<{ agentsPaused: boolean }>('/api/vozcore/agents/pause-all', {}),
+  resumeAll: () => api.post<{ agentsPaused: boolean }>('/api/vozcore/agents/resume-all', {}),
+  agentDetail: (agentIdOrKey: string) => api.get<AgentDetailPayload>(`/api/vozcore/agents/${agentIdOrKey}`),
+  updateAgentRuntime: (
+    agentIdOrKey: string,
+    payload: {
+      enabled?: boolean;
+      status?: 'active' | 'idle' | 'paused' | 'error';
+      customInstructions?: string | null;
+      timeoutSeconds?: number;
+      maxRetries?: number;
+    },
+  ) => api.patch<AgentDetailPayload>(`/api/vozcore/agents/${agentIdOrKey}/runtime`, payload),
+  toggleCapability: (agentIdOrKey: string, capKey: string, enabled: boolean) =>
+    api.patch<AgentDetailPayload>(`/api/vozcore/agents/${agentIdOrKey}/capabilities/${capKey}`, { enabled }),
+  updateTool: (agentIdOrKey: string, toolKey: string, payload: { enabled?: boolean; requiresApproval?: boolean }) =>
+    api.patch<AgentDetailPayload>(`/api/vozcore/agents/${agentIdOrKey}/tools/${toolKey}`, payload),
+  updatePermission: (
+    agentIdOrKey: string,
+    permKey: string,
+    payload: {
+      allowed?: boolean;
+      requiresApproval?: boolean;
+      rateLimitPerHour?: number;
+      maxTasksPerRun?: number;
+    },
+  ) => api.patch<AgentDetailPayload>(`/api/vozcore/agents/${agentIdOrKey}/permissions/${permKey}`, payload),
+  testAgent: (agentIdOrKey: string, payload: { prompt: string; parameters?: Record<string, unknown> }) =>
+    api.post<DirectAgentTestResult>(`/api/vozcore/agents/${agentIdOrKey}/test`, payload),
+  listContentDrafts: () => api.get<ContentDraftDto[]>('/api/vozcore/content-drafts'),
+  updateContentDraft: (draftId: string, payload: { title?: string; body?: string; channel?: string | null; brandName?: string }) =>
+    api.patch<ContentDraftDto>(`/api/vozcore/content-drafts/${draftId}`, payload),
   plan: (command: string) =>
     api.post<{ intent: Record<string, unknown>; plan: ExecutionPlanPayload | null; selectedAgents: VozCoreAgent[]; clarification: string | null }>(
       '/api/vozcore/plan',
@@ -194,6 +464,8 @@ export const EVENT_LABELS: Record<string, string> = {
   cancellation_requested: 'Cancellation requested',
   execution_finished: 'Execution finished',
   execution_failed: 'Execution failed',
+  direct_agent_test_started: 'Direct agent test started',
+  direct_agent_test_finished: 'Direct agent test finished',
   step_started: 'Step started',
   step_skipped: 'Step skipped',
   step_failed: 'Step failed',
@@ -223,4 +495,6 @@ export const TIMELINE_EVENTS = new Set([
   'cancellation_requested',
   'execution_finished',
   'execution_failed',
+  'direct_agent_test_started',
+  'direct_agent_test_finished',
 ]);

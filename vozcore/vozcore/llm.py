@@ -14,20 +14,32 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable, TypeVar
+from dataclasses import dataclass
+from typing import Any, Callable, Generic, TypeVar
 
 from pydantic import BaseModel
 
 from .config import settings
 from .errors import ConfigUnavailableError, LLMCallError
+from .pricing import estimate_cost_usd
 
 logger = logging.getLogger("vozcore.llm")
 
 T = TypeVar("T", bound=BaseModel)
 
 # Test-only injection point. Production code paths never set this.
-TestHandler = Callable[[str, type[BaseModel], str], BaseModel]
+TestHandler = Callable[..., BaseModel]
 _test_handler: TestHandler | None = None
+
+
+@dataclass
+class LLMCallMeta(Generic[T]):
+    parsed: T
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    estimated_cost_usd: float | None
 
 
 def set_test_handler(handler: TestHandler | None) -> None:
@@ -77,6 +89,29 @@ class LLMClient:
         temperature: float = 0.2,
     ) -> T:
         """One structured model call with usage accounting."""
+        meta = await self.structured_with_meta(
+            purpose=purpose,
+            system=system,
+            prompt=prompt,
+            schema=schema,
+            user_id=user_id,
+            execution_id=execution_id,
+            temperature=temperature,
+        )
+        return meta.parsed
+
+    async def structured_with_meta(
+        self,
+        *,
+        purpose: str,
+        system: str,
+        prompt: str,
+        schema: type[T],
+        user_id: str,
+        execution_id: str | None = None,
+        temperature: float = 0.2,
+    ) -> LLMCallMeta[T]:
+        """Structured model call returning parsed output plus token & cost telemetry."""
 
         # 1) In-process test handler (pytest) — highest priority, explicit.
         if _test_handler is not None:
@@ -94,9 +129,27 @@ class LLMClient:
             if inspect.isawaitable(result):
                 result = await result
             if not isinstance(result, schema):
-                raise LLMCallError(f"Test handler returned wrong type for {purpose}")
+                # Adapt Phase 2 AgentOutput test stubs onto specialist schemas with defaults
+                from .schemas import AgentOutput
+
+                if isinstance(result, AgentOutput):
+                    data = result.model_dump()
+                    adapted_kwargs: dict[str, Any] = {}
+                    for fname in schema.model_fields:
+                        if fname in data:
+                            adapted_kwargs[fname] = data[fname]
+                    result = schema.model_validate(adapted_kwargs)
+                else:
+                    raise LLMCallError(f"Test handler returned wrong type for {purpose}")
             await self._record_usage(purpose, "test-handler", 0, 0, user_id, execution_id)
-            return result
+            return LLMCallMeta(
+                parsed=result,
+                model="test-handler",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                estimated_cost_usd=None,
+            )
 
         # 2) Opt-in dev fake transport (never in production — enforced at startup).
         if settings.fake_llm:
@@ -104,7 +157,14 @@ class LLMClient:
 
             result = fake_structured(purpose, schema, prompt)
             await self._record_usage(purpose, "test-fake", 0, 0, user_id, execution_id)
-            return result  # type: ignore[return-value]
+            return LLMCallMeta(
+                parsed=result,  # type: ignore[arg-type]
+                model="test-fake",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                estimated_cost_usd=None,
+            )
 
         # 3) Real model — or a clear configuration error.
         if not settings.llm_configured:
@@ -138,15 +198,18 @@ class LLMClient:
                         details={"finish_reason": completion.choices[0].finish_reason},
                     )
                 usage = completion.usage
-                await self._record_usage(
-                    purpose,
-                    completion.model or settings.openai_model,
-                    getattr(usage, "prompt_tokens", 0) or 0,
-                    getattr(usage, "completion_tokens", 0) or 0,
-                    user_id,
-                    execution_id,
+                p_tok = int(getattr(usage, "prompt_tokens", 0) or 0)
+                c_tok = int(getattr(usage, "completion_tokens", 0) or 0)
+                model_used = completion.model or settings.openai_model
+                await self._record_usage(purpose, model_used, p_tok, c_tok, user_id, execution_id)
+                return LLMCallMeta(
+                    parsed=parsed,  # type: ignore[arg-type]
+                    model=model_used,
+                    prompt_tokens=p_tok,
+                    completion_tokens=c_tok,
+                    total_tokens=p_tok + c_tok,
+                    estimated_cost_usd=estimate_cost_usd(model_used, p_tok, c_tok),
                 )
-                return parsed  # type: ignore[return-value]
 
             except openai.RateLimitError as exc:
                 last_error = exc

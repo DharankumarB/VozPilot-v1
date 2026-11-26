@@ -9,7 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Field, Textarea } from '../components/ui/Form';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/PageHeader';
-import { StatusPill, Chip } from '../components/ui/Badge';
+import { StatusPill, Chip, Badge } from '../components/ui/Badge';
 import { EmptyState, ListSkeleton } from '../components/ui/Feedback';
 import { APPROVAL_STATUS_META, TASK_STATUS_META, agentIcon } from '../lib/constants';
 import { cn, formatDateTime, formatRelative } from '../lib/utils';
@@ -53,7 +53,7 @@ export function ApprovalCenterPage() {
     setBusyId(approval.id);
     try {
       await api.post<Approval>(`/api/approvals/${approval.id}/resolve`, { decision: 'approve' });
-      toast.success('Request approved', `“${approval.title}” moved to In Progress.`);
+      toast.success('Request approved', `“${approval.title}” authorized.`);
       await load();
     } catch (caught) {
       toast.error('Could not approve', errorMessage(caught));
@@ -71,7 +71,7 @@ export function ApprovalCenterPage() {
         decision: 'reject',
         note: rejectNote.trim() || undefined,
       });
-      toast.success('Request rejected', `“${rejectTarget.title}” returned to Pending.`);
+      toast.success('Request rejected', `“${rejectTarget.title}” rejected.`);
       setRejectTarget(null);
       setRejectNote('');
       await load();
@@ -89,7 +89,7 @@ export function ApprovalCenterPage() {
     <div className="anim-enter flex flex-col gap-5">
       <PageHeader
         title="Approval Center"
-        subtitle="Human-in-the-loop gates — approve or reject tasks waiting for your decision."
+        subtitle="Human-in-the-loop safety gates — approve or reject external emails, calendar changes, content publications, repository pushes, and gated tasks."
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -119,7 +119,7 @@ export function ApprovalCenterPage() {
           title={showPending ? 'All caught up' : 'No approval history yet'}
           description={
             showPending
-              ? 'Requests appear here when a task moves to “Waiting for Approval”.'
+              ? 'Requests appear here when an agent proposes an external side-effect or a task moves to “Waiting for Approval”.'
               : 'Approved and rejected decisions will collect here with timestamps and notes.'
           }
           action={
@@ -141,10 +141,23 @@ export function ApprovalCenterPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <StatusPill {...APPROVAL_STATUS_META[approval.status]} />
+                    {approval.actionType ? (
+                      <Badge className="border border-gild-400/35 bg-gild-500/10 font-mono text-gild-300">
+                        {approval.actionType}
+                      </Badge>
+                    ) : null}
                     <h2 className="text-[15px] font-semibold text-mist-100">{approval.title}</h2>
                   </div>
                   {approval.description ? (
-                    <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-mist-400">{approval.description}</p>
+                    <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-mist-400">
+                      {approval.description}
+                    </p>
+                  ) : null}
+
+                  {approval.actionPayload && Object.keys(approval.actionPayload).length > 0 ? (
+                    <pre className="mt-2.5 max-h-36 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/8 bg-black/30 p-3 font-mono text-[11px] text-mist-300">
+                      {JSON.stringify(approval.actionPayload, null, 2)}
+                    </pre>
                   ) : null}
 
                   <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] text-mist-500">
@@ -186,6 +199,12 @@ export function ApprovalCenterPage() {
                     <p className="mt-3 rounded-xl border border-white/8 bg-white/3 px-3.5 py-2.5 text-xs text-mist-400">
                       <span className="font-medium text-mist-300">Note: </span>
                       {approval.resolutionNote}
+                    </p>
+                  ) : null}
+
+                  {approval.executionResult ? (
+                    <p className="mt-2 rounded-xl border border-azure-400/25 bg-azure-500/8 px-3.5 py-2 font-mono text-[11px] text-azure-400">
+                      Action outcome: {JSON.stringify(approval.executionResult)}
                     </p>
                   ) : null}
                 </div>
@@ -230,7 +249,7 @@ export function ApprovalCenterPage() {
         open={rejectTarget !== null}
         onClose={() => setRejectTarget(null)}
         title="Reject request?"
-        description={`“${rejectTarget?.title ?? ''}” will return to Pending and the decision is recorded in history.`}
+        description={`“${rejectTarget?.title ?? ''}” will be rejected and recorded in history.`}
         size="sm"
         busy={rejectBusy}
         footer={
@@ -252,7 +271,7 @@ export function ApprovalCenterPage() {
               onChange={(event) => setRejectNote(event.target.value)}
               rows={3}
               maxLength={500}
-              placeholder="e.g. Scope needs another pass before work starts"
+              placeholder="e.g. Scope needs another pass before execution"
               autoFocus
             />
           </Field>

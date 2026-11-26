@@ -65,8 +65,8 @@ def fake_structured(purpose: str, schema: type, prompt: str) -> Any:
                 ),
             ],
         )
-    if purpose == "agent":
-        return AgentOutput(
+    if purpose == "agent" or purpose.startswith("agent:"):
+        base = AgentOutput(
             completed=True,
             result_summary="[test transport] Subtask fulfilled with deterministic output.",
             detailed_output=(
@@ -76,6 +76,10 @@ def fake_structured(purpose: str, schema: type, prompt: str) -> Any:
             ),
             missing_information=[],
         )
+        if schema is AgentOutput:
+            return base
+        data = base.model_dump()
+        return schema.model_validate({k: data[k] for k in schema.model_fields if k in data})
     if purpose == "evaluate":
         return EvaluationResult(
             verdict="completed",

@@ -14,12 +14,18 @@ export interface AgentDto {
   description: string;
   icon: string;
   status: 'active' | 'idle' | 'paused' | 'error';
+  enabled: boolean;
+  systemInstructions: string | null;
+  timeoutSeconds: number;
+  maxRetries: number;
   responsibilities: string[];
   config: Record<string, unknown>;
+  currentTask: { id: string; title: string; executionId: string | null } | null;
   lastActiveAt: string | null;
   createdAt: string;
   updatedAt: string;
   taskCounts: { total: number; open: number; completed: number };
+  agentTaskCounts: { total: number; running: number; completed: number; failed: number };
 }
 
 interface AgentRow {
@@ -29,26 +35,58 @@ interface AgentRow {
   description: string;
   icon: string;
   status: AgentDto['status'];
+  enabled: boolean;
+  system_instructions: string | null;
+  timeout_seconds: number | null;
+  max_retries: number | null;
   responsibilities: string[] | null;
   config: Record<string, unknown> | null;
+  current_task_id: string | null;
+  current_task_title: string | null;
+  current_execution_id: string | null;
   last_active_at: Date | null;
   created_at: Date;
   updated_at: Date;
   task_total: string | number;
   task_open: string | number;
   task_completed: string | number;
+  at_total: string | number;
+  at_running: string | number;
+  at_completed: string | number;
+  at_failed: string | number;
 }
 
 const AGENT_SELECT = (filter = '', order = '') => `
-  SELECT a.id, a.key, a.name, a.description, a.icon, a.status, a.responsibilities, a.config,
+  SELECT a.id, a.key, a.name, a.description, a.icon, a.status, a.enabled,
+         a.system_instructions, a.timeout_seconds, a.max_retries,
+         a.responsibilities, a.config, a.current_task_id,
+         ct.title AS current_task_title, ct.execution_id AS current_execution_id,
          a.last_active_at, a.created_at, a.updated_at,
-         COUNT(t.id) FILTER (WHERE t.id IS NOT NULL) AS task_total,
-         COUNT(t.id) FILTER (WHERE t.status IN ('pending', 'in_progress', 'waiting_approval')) AS task_open,
-         COUNT(t.id) FILTER (WHERE t.status = 'completed') AS task_completed
+         COALESCE(tc.task_total, 0) AS task_total,
+         COALESCE(tc.task_open, 0) AS task_open,
+         COALESCE(tc.task_completed, 0) AS task_completed,
+         COALESCE(atc.at_total, 0) AS at_total,
+         COALESCE(atc.at_running, 0) AS at_running,
+         COALESCE(atc.at_completed, 0) AS at_completed,
+         COALESCE(atc.at_failed, 0) AS at_failed
   FROM agents a
-  LEFT JOIN tasks t ON t.agent_id = a.id
+  LEFT JOIN agent_tasks ct ON ct.id = a.current_task_id
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS task_total,
+           COUNT(*) FILTER (WHERE t.status IN ('pending', 'in_progress', 'waiting_approval'))::int AS task_open,
+           COUNT(*) FILTER (WHERE t.status = 'completed')::int AS task_completed
+      FROM tasks t
+     WHERE t.user_id = a.user_id AND t.agent_id = a.id
+  ) tc ON true
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::int AS at_total,
+           COUNT(*) FILTER (WHERE at.status = 'running')::int AS at_running,
+           COUNT(*) FILTER (WHERE at.status = 'completed')::int AS at_completed,
+           COUNT(*) FILTER (WHERE at.status = 'failed')::int AS at_failed
+      FROM agent_tasks at
+     WHERE at.user_id = a.user_id AND at.agent_key = a.key
+  ) atc ON true
   WHERE a.user_id = $1${filter}
-  GROUP BY a.id
   ${order}
 `;
 
@@ -60,8 +98,20 @@ function mapAgent(row: AgentRow): AgentDto {
     description: row.description,
     icon: row.icon,
     status: row.status,
+    enabled: row.enabled !== false,
+    systemInstructions: row.system_instructions ?? null,
+    timeoutSeconds: Number(row.timeout_seconds ?? 90),
+    maxRetries: Number(row.max_retries ?? 2),
     responsibilities: row.responsibilities ?? [],
     config: row.config ?? {},
+    currentTask:
+      row.current_task_id && row.current_task_title
+        ? {
+            id: row.current_task_id,
+            title: row.current_task_title,
+            executionId: row.current_execution_id ?? null,
+          }
+        : null,
     lastActiveAt: iso(row.last_active_at),
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -69,6 +119,12 @@ function mapAgent(row: AgentRow): AgentDto {
       total: Number(row.task_total ?? 0),
       open: Number(row.task_open ?? 0),
       completed: Number(row.task_completed ?? 0),
+    },
+    agentTaskCounts: {
+      total: Number(row.at_total ?? 0),
+      running: Number(row.at_running ?? 0),
+      completed: Number(row.at_completed ?? 0),
+      failed: Number(row.at_failed ?? 0),
     },
   };
 }
@@ -93,6 +149,10 @@ export const updateAgentSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
   description: z.string().trim().max(600).optional(),
   status: agentStatusSchema.optional(),
+  enabled: z.boolean().optional(),
+  systemInstructions: z.string().max(4000).nullable().optional(),
+  timeoutSeconds: z.number().int().min(5).max(600).optional(),
+  maxRetries: z.number().int().min(0).max(5).optional(),
   icon: z
     .string()
     .trim()
@@ -110,20 +170,25 @@ export async function updateAgent(
   input: UpdateAgentInput,
 ): Promise<AgentDto> {
   return withUser(userId, async (client) => {
-    const existing = await client.query<{ id: string; name: string; status: string }>(
-      'SELECT id, name, status FROM agents WHERE id = $1 AND user_id = $2 FOR UPDATE',
+    const existing = await client.query<{ id: string; name: string; status: string; enabled: boolean }>(
+      'SELECT id, name, status, enabled FROM agents WHERE id = $1 AND user_id = $2 FOR UPDATE',
       [agentId, userId],
     );
     const agent = existing.rows[0];
     if (!agent) throw new NotFoundError('Agent not found.');
 
     const changes: string[] = [];
-    if (input.name !== undefined && input.name !== agent.name) changes.push(`Name: ${agent.name} → ${input.name}`);
+    if (input.name !== undefined && input.name !== agent.name) changes.push(`Name: ${agent.name} -> ${input.name}`);
     if (input.status !== undefined && input.status !== agent.status) {
-      changes.push(`Status: ${agent.status} → ${input.status}`);
+      changes.push(`Status: ${agent.status} -> ${input.status}`);
+    }
+    if (input.enabled !== undefined && input.enabled !== agent.enabled) {
+      changes.push(input.enabled ? 'Enabled' : 'Disabled');
     }
     if (input.description !== undefined) changes.push('Description updated');
     if (input.responsibilities !== undefined) changes.push('Responsibilities updated');
+    if (input.systemInstructions !== undefined) changes.push('System instructions updated');
+    if (input.timeoutSeconds !== undefined || input.maxRetries !== undefined) changes.push('Limits updated');
     if (input.icon !== undefined) changes.push('Icon updated');
     if (input.config !== undefined) changes.push('Configuration updated');
 
@@ -140,6 +205,12 @@ export async function updateAgent(
       push('status', input.status);
       if (input.status === 'active') push('last_active_at', new Date().toISOString());
     }
+    if (input.enabled !== undefined) push('enabled', input.enabled);
+    if (input.systemInstructions !== undefined) {
+      push('system_instructions', input.systemInstructions ? input.systemInstructions.trim() : null);
+    }
+    if (input.timeoutSeconds !== undefined) push('timeout_seconds', input.timeoutSeconds);
+    if (input.maxRetries !== undefined) push('max_retries', input.maxRetries);
     if (input.icon !== undefined) push('icon', input.icon);
     if (input.responsibilities !== undefined) push('responsibilities', JSON.stringify(input.responsibilities));
     if (input.config !== undefined) push('config', JSON.stringify(input.config));

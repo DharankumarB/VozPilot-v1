@@ -1,18 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronDown, LogOut, Menu, Palette, Settings, UserRound } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { ChevronDown, Loader2, LogOut, Menu, Palette, PauseCircle, PlayCircle, Settings, UserRound } from 'lucide-react';
+import { errorMessage, useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { Avatar, Wordmark } from '../components/brand/Logo';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
-import { useWorkspacePulse } from '../hooks/useWorkspacePulse';
+import { WORKSPACE_PAUSE_EVENT, useWorkspacePulse } from '../hooks/useWorkspacePulse';
+import { vozcore } from '../lib/vozcore';
 import { cn } from '../lib/utils';
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
   const { user, logout } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
-  const { activeAgents, totalAgents } = useWorkspacePulse();
+  const { activeAgents, totalAgents, agentsPaused, refresh } = useWorkspacePulse();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pauseBusy, setPauseBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,6 +31,25 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
     setMenuOpen(false);
     await logout();
     navigate('/login');
+  };
+
+  const togglePauseAll = async () => {
+    setPauseBusy(true);
+    try {
+      if (agentsPaused) {
+        await vozcore.resumeAll();
+        toast.success('Workforce resumed', 'Agents can now accept new VozCore delegations.');
+      } else {
+        await vozcore.pauseAll();
+        toast.info('All agents paused', 'In-flight runs are halted safely and new dispatches are blocked.');
+      }
+      window.dispatchEvent(new Event(WORKSPACE_PAUSE_EVENT));
+      refresh();
+    } catch (caught) {
+      toast.error('Could not toggle agent pause', errorMessage(caught));
+    } finally {
+      setPauseBusy(false);
+    }
   };
 
   return (
@@ -52,24 +75,55 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav: () => void }) {
 
       {/* Right side */}
       <div className="flex items-center gap-2.5">
+        {/* Global Pause All Agents control */}
+        <button
+          type="button"
+          onClick={() => void togglePauseAll()}
+          disabled={pauseBusy}
+          title={
+            agentsPaused
+              ? 'All agents are paused — click to resume workforce'
+              : 'Emergency switch — pause all agents and block new delegations'
+          }
+          className={cn(
+            'focus-ring hidden h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition sm:inline-flex',
+            agentsPaused
+              ? 'border-gild-400/40 bg-gild-500/12 text-gild-300 hover:bg-gild-500/20'
+              : 'border-white/10 bg-white/4 text-mist-300 hover:border-rosh-400/35 hover:bg-rosh-500/10 hover:text-rosh-400',
+          )}
+        >
+          {pauseBusy ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : agentsPaused ? (
+            <PlayCircle size={13} className="text-gild-400" />
+          ) : (
+            <PauseCircle size={13} />
+          )}
+          <span>{agentsPaused ? 'Resume Agents' : 'Pause All'}</span>
+        </button>
+
         {/* Agent activity indicator */}
         <Link
           to="/agents"
-          title={`${activeAgents} of ${totalAgents} agents active`}
+          title={agentsPaused ? 'Workforce paused' : `${activeAgents} of ${totalAgents} agents active`}
           className="focus-ring hidden h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/4 px-3 text-xs text-mist-300 transition hover:bg-white/8 sm:flex"
         >
           <span
             className={cn(
               'h-1.5 w-1.5 rounded-full',
-              activeAgents > 0 ? 'bg-verdant-500 pulse-dot' : 'bg-mist-500',
+              agentsPaused
+                ? 'bg-gild-400'
+                : activeAgents > 0
+                  ? 'bg-verdant-500 pulse-dot'
+                  : 'bg-mist-500',
             )}
             aria-hidden="true"
           />
           <span className="font-medium">
-            {activeAgents}
-            <span className="text-mist-500">/{totalAgents}</span>
+            {agentsPaused ? 'Paused' : activeAgents}
+            {!agentsPaused ? <span className="text-mist-500">/{totalAgents}</span> : null}
           </span>
-          <span className="text-mist-500">active</span>
+          {!agentsPaused ? <span className="text-mist-500">active</span> : null}
         </Link>
 
         <NotificationBell />

@@ -20,126 +20,121 @@ export const DEFAULT_AGENTS: DefaultAgentSeed[] = [
     key: 'vozcore',
     name: 'VozCore',
     description:
-      'Central AI manager for the VozPilot workforce. Delegates incoming commands to specialist agents, coordinates their work and reports results once orchestration goes live in Phase 2.',
+      'Central AI manager for the VozPilot workforce. Plans commands, delegates subtasks across the eight specialist agents, enforces safety gates, and consolidates results.',
     icon: 'sparkles',
     status: 'active',
     responsibilities: [
-      'Route incoming commands to the right specialist agent',
-      'Coordinate delegated work and track its progress',
-      'Aggregate results into a single status report',
+      'Route incoming commands to the right specialist agents',
+      'Coordinate parallel & sequential delegated work',
+      'Evaluate outputs and consolidate into a single report',
     ],
   },
   {
     key: 'research',
     name: 'Research Agent',
     description:
-      'Collects and structures information from the web and internal sources into briefs you can act on.',
+      'Searches configured web providers and internal sources, compares evidence, separates facts from assumptions, flags conflicts, and stores cited reports.',
     icon: 'telescope',
     status: 'idle',
     responsibilities: [
-      'Gather source material for briefs',
-      'Summarise findings with references',
-      'Keep structured research notes in memory',
+      'Search configured providers & gather verified sources',
+      'Compare sources, surface conflicts & separate assumptions',
+      'Store structured research reports with preserved URLs',
     ],
   },
   {
     key: 'inbox',
     name: 'Inbox Agent',
     description:
-      'Triages email in Gmail — labels threads, surfaces what matters and drafts replies for your approval.',
+      'Connects to Gmail via OAuth 2.0 — reads and searches authorized threads, flags urgent messages, drafts replies/follow-ups, and holds sends for approval.',
     icon: 'inbox',
     status: 'idle',
     responsibilities: [
-      'Classify and label incoming messages',
-      'Draft replies for human approval',
-      'Surface urgent threads early',
+      'Read, search and categorize authorized Gmail messages',
+      'Surface urgent threads and summarize conversations',
+      'Draft replies & follow-ups; require approval before sending',
     ],
   },
   {
     key: 'project',
     name: 'Project Agent',
     description:
-      'Keeps projects moving — tracks milestones, owners, blockers and delivery risk across workstreams.',
+      'Creates projects and subtasks in the Task Manager, assigns agents, tracks milestones, detects delayed tasks, and generates progress reports.',
     icon: 'folder-kanban',
     status: 'idle',
     responsibilities: [
-      'Track milestones and delivery dates',
-      'Flag blockers and stale work',
-      'Prepare weekly project status summaries',
+      'Create projects, milestones and assigned subtasks',
+      'Detect delayed/overdue tasks and coordinate workflows',
+      'Generate database-backed project progress reports',
     ],
   },
   {
     key: 'content',
     name: 'Content Agent',
     description:
-      'Plans and drafts content across channels. Every draft stays in review until you approve it.',
+      'Creates brand-aligned social posts, captions, marketing strategies, content calendars, articles, product copy, ads, and design briefs as editable drafts.',
     icon: 'pen-tool',
     status: 'idle',
     responsibilities: [
-      'Turn briefs into structured drafts',
-      'Maintain a content calendar',
-      'Adapt copy per channel and format',
+      'Craft copy aligned to VozLook Studios or custom brands',
+      'Build content calendars, blogs, ads & design briefs',
+      'Store editable drafts; require approval before publishing',
     ],
   },
   {
     key: 'finance',
     name: 'Finance Agent',
     description:
-      'Watches invoices, budgets and expenses — catching anomalies and upcoming payments before they surprise you.',
+      'Records authorized income/expenses, categorizes transactions, calculates budgets and project costs, detects anomalies, and prepares budget recommendations.',
     icon: 'wallet',
     status: 'idle',
     responsibilities: [
-      'Track invoices and due dates',
-      'Compare spending against budget',
-      'Flag unusual or duplicated charges',
+      'Record and categorize authorized income & expenses',
+      'Compare budgets, project costs & flag spending anomalies',
+      'Prepare budget recommendations without executing payments',
     ],
   },
   {
     key: 'schedule',
     name: 'Schedule Agent',
     description:
-      'Manages calendars and meetings — finds open slots, books time and prepares agendas.',
+      'Connects to Google Calendar via OAuth 2.0 — reads events, finds open slots in your timezone, detects conflicts, creates reminders, and confirms calendar changes.',
     icon: 'calendar-clock',
     status: 'idle',
     responsibilities: [
-      'Find and propose meeting slots',
-      'Prepare agendas and pre-reads',
-      'Protect focus blocks on the calendar',
+      'Read calendar events & find open slots in user timezone',
+      'Detect meeting conflicts, track deadlines & set reminders',
+      'Require confirmation before creating or modifying events',
     ],
   },
   {
     key: 'developer',
     name: 'Developer Agent',
     description:
-      'Assists engineering work — issue triage, review preparation and routine repository changes.',
+      'Generates and reviews code, debugs errors, writes unit tests and docs, executes snippets in a resource-limited sandbox, and analyzes authorized GitHub repos.',
     icon: 'code-xml',
     status: 'idle',
     responsibilities: [
-      'Triage and label incoming issues',
-      'Prepare change descriptions and checklists',
-      'Track review and CI follow-ups',
+      'Generate code, debug errors, review quality & write docs',
+      'Run unit tests inside a CPU/memory/env-isolated sandbox',
+      'Inspect authorized GitHub repos; gate pushes behind approval',
     ],
   },
   {
     key: 'memory',
     name: 'Memory Agent',
     description:
-      'Organises long-term knowledge in the Memory Center so every agent can recall project context.',
+      'Curates workspace knowledge — stores categorized memories, retrieves project context with semantic search, deduplicates entries, and shares context via VozCore.',
     icon: 'brain',
     status: 'idle',
     responsibilities: [
-      'Structure and categorise stored knowledge',
-      'Deduplicate overlapping memories',
-      'Surface relevant context on request',
+      'Store, categorize and deduplicate non-sensitive memories',
+      'Retrieve project context and search past execution results',
+      'Share authorized context packets across agents via VozCore',
     ],
   },
 ];
 
-/**
- * Stable display order for agents (VozCore first, then the curated order).
- * Rows seeded in a single transaction share `created_at`, so ordering must
- * come from the key itself.
- */
 export function agentOrderBy(expression: string): string {
   const cases = DEFAULT_AGENTS.map((agent, index) => `WHEN '${agent.key}' THEN ${index}`).join(' ');
   return `ORDER BY CASE ${expression} ${cases} ELSE ${DEFAULT_AGENTS.length} END ASC`;
@@ -157,8 +152,8 @@ export const DEFAULT_INTEGRATION_PROVIDERS = [
 export async function seedDefaultAgents(client: PoolClient, userId: string): Promise<void> {
   for (const agent of DEFAULT_AGENTS) {
     await client.query(
-      `INSERT INTO agents (user_id, key, name, description, icon, status, responsibilities)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      `INSERT INTO agents (user_id, key, name, description, icon, status, enabled, responsibilities)
+       VALUES ($1, $2, $3, $4, $5, $6, true, $7::jsonb)`,
       [
         userId,
         agent.key,
