@@ -1,0 +1,247 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+   VozPilot design system — deep charcoal canvas, violet accents,
+   restrained gold highlights, glass surfaces.
+   ========================================================================== */
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', monospace;
+
+  /* Surfaces */
+  --color-void-950: #07070a;
+  --color-void-900: #0a0a0f;
+  --color-void-850: #0e0e15;
+  --color-void-800: #12121a;
+  --color-void-700: #171722;
+  --color-void-600: #1f1f2c;
+  --color-void-500: #2b2b3d;
+
+  /* Text */
+  --color-mist-100: #f2f2f7;
+  --color-mist-200: #dedee8;
+  --color-mist-300: #b8b8ca;
+  --color-mist-400: #8e8ea6;
+  --color-mist-500: #6a6a82;
+  --color-mist-600: #4e4e62;
+
+  /* Brand — violet */
+  --color-flare-300: #b7a4ff;
+  --color-flare-400: #9d84ff;
+  --color-flare-500: #7c5cff;
+  --color-flare-600: #6544e8;
+  --color-flare-700: #5233c9;
+
+  /* Brand — gold */
+  --color-gild-300: #f0d194;
+  --color-gild-400: #e6bd6a;
+  --color-gild-500: #d9a94e;
+  --color-gild-600: #b98a36;
+
+  /* Semantic */
+  --color-verdant-400: #4ade9d;
+  --color-verdant-500: #34d399;
+  --color-verdant-600: #10b981;
+  --color-lume-400: #fcd34d;
+  --color-lume-500: #fbbf24;
+  --color-rosh-400: #fca5a5;
+  --color-rosh-500: #f87171;
+  --color-rosh-600: #ef4444;
+  --color-azure-400: #93c5fd;
+  --color-azure-500: #60a5fa;
+  --color-azure-600: #3b82f6;
+}
+
+/* Dynamic accent (Settings → Appearance) */
+:root {
+  --accent: #7c5cff;
+  --accent-strong: #6544e8;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-faint: color-mix(in srgb, var(--accent) 8%, transparent);
+  --gold: #d9a94e;
+}
+
+html {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--color-void-950);
+  color: var(--color-mist-200);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Subtle ambient wash behind the app — violet depth, no glare */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 500px at 85% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+    radial-gradient(900px 460px at -10% 110%, color-mix(in srgb, var(--gold) 4%, transparent), transparent 55%);
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--color-mist-100);
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-void-500) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-void-500);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-mist-600);
+}
+
+@layer components {
+  /* Glass card */
+  .glass {
+    background: linear-gradient(165deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .glass-hover {
+    transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+  }
+  .glass-hover:hover {
+    border-color: rgba(255, 255, 255, 0.14);
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+
+  /* Panel — solid variant for dense areas */
+  .panel {
+    background-color: var(--color-void-850);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 16px;
+  }
+
+  /* Micro label */
+  .micro-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-mist-500);
+  }
+
+  .focus-ring {
+    outline: none;
+  }
+  .focus-ring:focus-visible {
+    box-shadow:
+      0 0 0 2px var(--color-void-950),
+      0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+
+  /* Animations */
+  .anim-enter {
+    animation: vp-fade-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .anim-fade {
+    animation: vp-fade 0.22s ease-out both;
+  }
+  .anim-scale-in {
+    animation: vp-scale-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .anim-shimmer {
+    background: linear-gradient(
+      100deg,
+      rgba(255, 255, 255, 0.04) 40%,
+      rgba(255, 255, 255, 0.09) 50%,
+      rgba(255, 255, 255, 0.04) 60%
+    );
+    background-size: 200% 100%;
+    animation: vp-shimmer 1.4s linear infinite;
+  }
+}
+
+@keyframes vp-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes vp-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vp-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes vp-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes vp-pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-verdant-500) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-verdant-500) 0%, transparent);
+  }
+}
+
+.pulse-dot {
+  animation: vp-pulse-dot 2.2s ease-in-out infinite;
+}
+
+/* Density (Settings → Appearance) */
+html[data-density='compact'] .density-pad {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
