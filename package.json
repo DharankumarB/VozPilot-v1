@@ -2,7 +2,7 @@
   "name": "vozpilot",
   "private": true,
   "version": "1.0.0",
-  "description": "VozPilot — autonomous multi-agent AI workforce platform by VozLook Studios (Phase 1 foundation)",
+  "description": "VozPilot \u2014 autonomous multi-agent AI workforce platform by VozLook Studios (Phase 1 foundation)",
   "workspaces": [
     "client",
     "server"
@@ -13,7 +13,11 @@
     "build": "npm run typecheck && npm run build -w client",
     "start": "npm run start -w server",
     "preview": "npm run build && npm run start",
-    "test:smoke": "node scripts/smoke-test.mjs"
+    "test:smoke": "node scripts/smoke-test.mjs",
+    "vozcore": "cd vozcore && .venv/bin/python -m vozcore",
+    "vozcore:install": "cd vozcore && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "vozcore:test": "cd vozcore && .venv/bin/python -m pytest tests -m \"not live\"",
+    "vozcore:test:live": "cd vozcore && .venv/bin/python -m pytest tests -m live"
   },
   "devDependencies": {
     "concurrently": "^10.0.7",

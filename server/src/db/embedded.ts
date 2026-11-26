@@ -136,7 +136,13 @@ export async function provisionAppRole(): Promise<void> {
       `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${env.APP_DB_USER}"`,
     );
     await client.query(
+      `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${env.APP_DB_USER}"`,
+    );
+    await client.query(
       `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "${env.APP_DB_USER}"`,
+    );
+    await client.query(
+      `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO "${env.APP_DB_USER}"`,
     );
   } finally {
     await client.end();

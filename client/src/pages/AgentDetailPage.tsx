@@ -365,10 +365,10 @@ export function AgentDetailPage() {
         </div>
       </div>
 
-      {/* Danger-less footer note: agents are profiles in Phase 1 (no deletion to avoid schema drift) */}
+      {/* Footer note: agents are permanent profiles (no deletion to avoid schema drift) */}
       <p className="flex items-center gap-1.5 text-[11px] text-mist-600">
         <Trash2 size={11} className="text-mist-600" />
-        Agent profiles are permanent in Phase 1 — their configuration and status remain yours to change.
+        Agent profiles are permanent — their configuration and status remain yours to change.
       </p>
     </div>
   );

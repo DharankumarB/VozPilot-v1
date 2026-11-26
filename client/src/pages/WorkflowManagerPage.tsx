@@ -190,8 +190,9 @@ export function WorkflowManagerPage() {
 
       <div className="rounded-2xl border border-dashed border-white/12 bg-white/2 px-4 py-3 text-xs leading-relaxed text-mist-500">
         <strong className="font-semibold text-mist-400">Execution engine:</strong> workflows store
-        their definition and status now; run history will be recorded here when execution goes live in
-        Phase 2 — no synthetic run records are ever displayed.
+        their definition and status now; run history lands here when the workflow engine ships.
+        VozCore agent orchestration already runs live in the AI Command Center — and no synthetic
+        run records are ever displayed.
       </div>
 
       {loadError && !workflows ? (
@@ -308,7 +309,7 @@ export function WorkflowManagerPage() {
                         Execution history
                       </div>
                       <p className="mt-1.5 text-[11.5px] leading-relaxed text-mist-500">
-                        No executions recorded yet — the workflow execution engine arrives in Phase 2.
+                        No executions recorded yet — the workflow execution engine ships after VozCore orchestration.
                         {workflow.executions.length === 0 ? ' Nothing has run, and nothing is invented.' : ''}
                       </p>
                     </div>

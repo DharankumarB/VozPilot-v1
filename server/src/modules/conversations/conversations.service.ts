@@ -17,6 +17,7 @@ export interface MessageDto {
   content: string;
   attachments: MessageAttachmentDto[];
   createdAt: string;
+  executionId?: string | null;
 }
 
 export interface ConversationDto {
@@ -41,6 +42,7 @@ interface MessageRow {
   role: 'user' | 'assistant' | 'system';
   content: string;
   attachments: MessageAttachmentDto[] | null;
+  execution_id?: string | null;
   created_at: Date;
 }
 
@@ -62,6 +64,7 @@ function mapMessage(row: MessageRow): MessageDto {
     content: row.content,
     attachments: row.attachments ?? [],
     createdAt: row.created_at.toISOString(),
+    executionId: row.execution_id ?? null,
   };
 }
 

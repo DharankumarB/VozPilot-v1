@@ -45,6 +45,8 @@ const envSchema = z.object({
   APP_DB_USER: z.string().regex(/^[a-z_][a-z0-9_]*$/, 'APP_DB_USER must be a valid lowercase identifier'),
   APP_DB_PASSWORD: z.string().min(8),
 
+  VOZCORE_PORT: z.coerce.number().int().min(1).max(65535).default(8001),
+
   GITHUB_CLIENT_ID: z.string().default(''),
   GITHUB_CLIENT_SECRET: z.string().default(''),
   GOOGLE_CLIENT_ID: z.string().default(''),

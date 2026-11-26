@@ -92,10 +92,10 @@ export function Sidebar({ collapsed, mobileOpen, onToggle, onCloseMobile }: Side
             <div className="glass mt-6 rounded-xl p-3.5">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-gild-400">
                 <Rocket size={12} />
-                Phase 1
+                Phase 2
               </div>
               <p className="mt-1.5 text-[11px] leading-relaxed text-mist-500">
-                Workforce foundation is live. VozCore orchestration connects in Phase 2.
+                VozCore orchestration runs on real model calls — honest status everywhere.
               </p>
             </div>
           ) : null}
@@ -107,7 +107,7 @@ export function Sidebar({ collapsed, mobileOpen, onToggle, onCloseMobile }: Side
             {!collapsed ? (
               <div className="min-w-0">
                 <p className="truncate text-[11px] font-medium text-mist-400">VozLook Studios</p>
-                <p className="text-[10px] text-mist-600">VozPilot v1 · Phase 1</p>
+                <p className="text-[10px] text-mist-600">VozPilot v1 · Phase 2</p>
               </div>
             ) : null}
             <button

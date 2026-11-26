@@ -147,7 +147,7 @@ export function OverviewPage() {
           </button>
         </div>
         <p className="mt-2.5 text-[11px] text-mist-600">
-          Commands open as drafts in the AI Command Center — VozCore orchestration connects in Phase 2.
+          Commands run through VozCore’s orchestration engine in the AI Command Center.
         </p>
       </form>
 

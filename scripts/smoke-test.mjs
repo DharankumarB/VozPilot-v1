@@ -438,6 +438,39 @@ async function main() {
   const crossTask = await other.patch(`/api/tasks/${taskId}`, { status: 'failed' });
   ok(crossTask.status === 404, "Cross-workspace task update denied (404)");
 
+  /* ------------------------------------------------------------- vozcore */
+  section('VozCore orchestration (Phase 2)');
+
+  const vcHealthRes = await anon.get('/api/vozcore/health');
+  const vcHealth = dataOf(vcHealthRes);
+  ok(vcHealthRes.status === 200 && vcHealth?.status === 'ok' && vcHealth?.engine === 'vozcore', 'GET /api/vozcore/health → ok envelope');
+  ok(Array.isArray(vcHealth?.graph?.nodes) && vcHealth.graph.nodes.length === 12, 'LangGraph exposes exactly 12 nodes');
+  ok(vcHealth?.graph?.conditionalRouting === true && vcHealth?.graph?.parallelExecution === true, 'Graph advertises conditional routing + parallel execution');
+
+  const vcNoAuth = await new Session().get('/api/vozcore/agents');
+  ok(vcNoAuth.status === 401, 'VozCore rejects unauthenticated requests (401)');
+
+  const vcAgentsRes = await anon.get('/api/vozcore/agents');
+  const vcAgents = dataOf(vcAgentsRes);
+  ok(vcAgentsRes.status === 200 && vcAgents?.coordinator?.key === 'vozcore', 'Coordinator listed by the engine');
+  ok(Array.isArray(vcAgents?.agents) && vcAgents.agents.length === 8, `Engine returns 8 specialist agents (got ${vcAgents?.agents?.length})`);
+  ok(vcAgents.agents.every((agent) => agent.executionMode === 'llm' && agent.capabilities.length >= 3), 'Every agent exposes LLM execution mode + capabilities');
+
+  const vcPlan = await anon.post('/api/vozcore/plan', { command: 'Summarise the biggest risks across my open projects' });
+  ok(vcPlan.status === 503 && vcPlan.json?.error?.code === 'vozcore_not_configured', 'Plan without credentials → honest 503 configuration error (no fake plan)');
+
+  const vcShort = await anon.post('/api/vozcore/command', { command: 'x' });
+  ok(vcShort.status === 422 && vcShort.json?.error?.code === 'validation_error', 'Invalid command payload → 422 validation_error');
+
+  const vcCmd = await anon.post('/api/vozcore/command', { command: 'Summarise the biggest risks across my open projects' });
+  ok(vcCmd.status === 503 && vcCmd.json?.error?.code === 'vozcore_not_configured', 'Command without credentials → 503, never a simulated execution');
+
+  const vcExecsRes = await anon.get('/api/vozcore/executions');
+  ok(vcExecsRes.status === 200 && Array.isArray(dataOf(vcExecsRes)), 'GET /api/vozcore/executions returns an array');
+
+  const vcCross = await new Session().get('/api/vozcore/executions/00000000-0000-0000-0000-000000000000');
+  ok(vcCross.status === 401, 'Execution detail requires authentication (401)');
+
   /* ---------------------------------------------------------------- logout */
   section('Logout');
   const logout = await anon.post('/api/auth/logout');

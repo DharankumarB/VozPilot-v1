@@ -42,7 +42,7 @@ export function AppShell() {
           <Outlet />
         </main>
         <footer className="border-t border-white/6 px-6 py-4 text-center text-[11px] text-mist-600">
-          VozPilot Phase 1 · Built by VozLook Studios · AI orchestration arrives in Phase 2
+          VozPilot · Built by VozLook Studios · VozCore orchestration (Phase 2)
         </footer>
       </div>
     </div>

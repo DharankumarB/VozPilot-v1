@@ -37,8 +37,8 @@ function BrandPanel() {
           <span className="text-[var(--accent)]"> under your command.</span>
         </h1>
         <p className="mt-3 max-w-md text-sm leading-relaxed text-mist-400">
-          VozPilot centralises specialised agents behind one manager. Phase 1 delivers the full
-          foundation — orchestration connects in Phase 2.
+          VozPilot centralises specialised agents behind one manager. VozCore plans, delegates
+          and evaluates real work across your specialist fleet.
         </p>
         <ul className="mt-9 flex flex-col gap-5">
           {points.map((point) => (
@@ -55,7 +55,7 @@ function BrandPanel() {
         </ul>
       </div>
       <p className="relative text-xs text-mist-600">
-        Phase 1 · Application foundation · AI execution arrives in Phase 2
+        Phase 2 · VozCore orchestration · real model calls, honest results
       </p>
     </div>
   );

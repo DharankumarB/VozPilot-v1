@@ -185,8 +185,8 @@ export function IntegrationsPage() {
           </li>
           <li className="rounded-xl border border-white/8 bg-white/3 px-3.5 py-3">
             <span className="mb-1 block font-mono text-[10px] font-bold text-[var(--accent)]">STEP 3</span>
-            The authorization callback flow goes live with Phase 2, when agents start operating these
-            services.
+            Add the authorization callback to the server .env — the connection activates as soon
+            as the OAuth flow is wired up.
           </li>
         </ol>
       </div>

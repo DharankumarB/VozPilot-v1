@@ -123,6 +123,8 @@ export interface Message {
   content: string;
   attachments: MessageAttachment[];
   createdAt: string;
+  /** Set on assistant replies produced by a real VozCore execution. */
+  executionId?: string | null;
 }
 
 export interface Approval {

@@ -11,6 +11,7 @@ import activityRoutes from './modules/activity/activity.routes';
 import analyticsRoutes from './modules/analytics/analytics.routes';
 import settingsRoutes from './modules/settings/settings.routes';
 import searchRoutes from './modules/search/search.routes';
+import vozcoreRoutes from './modules/vozcore/vozcore.routes';
 import { notFoundHandler } from './middleware/errorHandler';
 
 /** Mount every API module under /api. */
@@ -33,6 +34,7 @@ export function createApiRouter(): Router {
   api.use('/analytics', analyticsRoutes);
   api.use('/settings', settingsRoutes);
   api.use('/search', searchRoutes);
+  api.use('/vozcore', vozcoreRoutes);
 
   api.use(notFoundHandler);
   return api;

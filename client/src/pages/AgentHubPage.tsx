@@ -61,7 +61,7 @@ export function AgentHubPage() {
     <div className="anim-enter flex flex-col gap-6">
       <PageHeader
         title="Agent Hub"
-        subtitle="Nine specialist profiles — configure status, description and responsibilities. AI execution connects in Phase 2."
+        subtitle="Nine specialist profiles — configure status, description and responsibilities. VozCore delegates real work to enabled agents."
         actions={
           <div className="relative">
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-mist-500" />
