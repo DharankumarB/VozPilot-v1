@@ -4,6 +4,7 @@ import { withUser } from '../../db/pool';
 import { logActivity } from '../../lib/activity';
 import { BadRequestError, ConflictError, NotFoundError } from '../../lib/errors';
 import { iso } from '../../lib/serialize';
+import { decryptToken } from '../../lib/tokenCrypto';
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'dismissed';
 
@@ -21,6 +22,12 @@ export interface ApprovalDto {
   agentId: string | null;
   agentName: string | null;
   agentIcon: string | null;
+  executionId: string | null;
+  agentTaskId: string | null;
+  actionType: string | null;
+  actionPayload: Record<string, unknown>;
+  executedAt: string | null;
+  executionResult: Record<string, unknown> | null;
 }
 
 interface ApprovalRow {
@@ -37,11 +44,19 @@ interface ApprovalRow {
   agent_id: string | null;
   agent_name: string | null;
   agent_icon: string | null;
+  execution_id: string | null;
+  agent_task_id: string | null;
+  action_type: string | null;
+  action_payload: Record<string, unknown> | null;
+  executed_at: Date | null;
+  execution_result: Record<string, unknown> | null;
 }
 
 const APPROVAL_SELECT = `
   SELECT ap.id, ap.title, ap.description, ap.status, ap.resolution_note,
          ap.requested_at, ap.resolved_at, ap.task_id, ap.agent_id,
+         ap.execution_id, ap.agent_task_id, ap.action_type, ap.action_payload,
+         ap.executed_at, ap.execution_result,
          t.title AS task_title, t.status AS task_status,
          a.name AS agent_name, a.icon AS agent_icon
   FROM approvals ap
@@ -65,14 +80,15 @@ function mapApproval(row: ApprovalRow): ApprovalDto {
     agentId: row.agent_id,
     agentName: row.agent_name,
     agentIcon: row.agent_icon,
+    executionId: row.execution_id ?? null,
+    agentTaskId: row.agent_task_id ?? null,
+    actionType: row.action_type ?? null,
+    actionPayload: row.action_payload ?? {},
+    executedAt: iso(row.executed_at),
+    executionResult: row.execution_result ?? null,
   };
 }
 
-/**
- * Create a pending approval request for a task.
- * Called by the task service whenever a task enters "Waiting for Approval".
- * Runs on the caller's transaction so both records commit atomically.
- */
 export async function createPendingApproval(
   client: PoolClient,
   input: {
@@ -118,7 +134,6 @@ export async function createPendingApproval(
   return approvalId;
 }
 
-/** Dismiss a pending approval when its task leaves the waiting state. */
 export async function dismissPendingApproval(
   client: PoolClient,
   userId: string,
@@ -163,12 +178,110 @@ export const resolveApprovalSchema = z.object({
 
 export type ResolveApprovalInput = z.infer<typeof resolveApprovalSchema>;
 
-/**
- * Approve or reject a pending request.
- *  - approve → linked task moves to "In Progress" (work is authorized)
- *  - reject  → linked task returns to "Pending" (returned to queue)
- * The approval history records who decided, when and why.
- */
+async function executeApprovedExternalAction(
+  client: PoolClient,
+  userId: string,
+  approval: ApprovalRow,
+): Promise<Record<string, unknown> | null> {
+  const actionType = approval.action_type;
+  const payload = approval.action_payload ?? {};
+  if (!actionType) return null;
+
+  if (actionType === 'content.request_external_publication') {
+    const draftId = typeof payload.draft_id === 'string' ? payload.draft_id : null;
+    if (draftId) {
+      await client.query(
+        "UPDATE content_drafts SET status = 'approved' WHERE id = $1 AND user_id = $2",
+        [draftId, userId],
+      );
+    }
+    return { status: 'approved_for_publication', draftId };
+  }
+
+  if (actionType === 'inbox.send_approved_email') {
+    const row = await client.query<{ status: string; encrypted_access_token: string | null }>(
+      "SELECT status, encrypted_access_token FROM integrations WHERE user_id = $1 AND provider = 'gmail'",
+      [userId],
+    );
+    const gmail = row.rows[0];
+    if (!gmail || gmail.status !== 'connected' || !gmail.encrypted_access_token) {
+      return { sent: false, reason: 'gmail_not_connected' };
+    }
+    const token = decryptToken(gmail.encrypted_access_token);
+    if (!token) return { sent: false, reason: 'missing_token' };
+
+    const to = String(payload.to ?? '');
+    const subject = String(payload.subject ?? '');
+    const body = String(payload.body ?? '');
+    const rfc822 = [
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      'Content-Type: text/plain; charset="UTF-8"',
+      '',
+      body,
+    ].join('\r\n');
+    const raw = Buffer.from(rfc822, 'utf8').toString('base64url');
+    const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        raw,
+        ...(typeof payload.thread_id === 'string' && payload.thread_id ? { threadId: payload.thread_id } : {}),
+      }),
+    });
+    if (!resp.ok) {
+      return { sent: false, statusCode: resp.status, reason: 'gmail_api_rejected' };
+    }
+    const sentData = (await resp.json()) as { id?: string };
+    return { sent: true, messageId: sentData.id ?? null };
+  }
+
+  if (actionType === 'schedule.propose_calendar_change') {
+    const row = await client.query<{ status: string; encrypted_access_token: string | null }>(
+      "SELECT status, encrypted_access_token FROM integrations WHERE user_id = $1 AND provider = 'google_calendar'",
+      [userId],
+    );
+    const cal = row.rows[0];
+    if (!cal || cal.status !== 'connected' || !cal.encrypted_access_token) {
+      return { executed: false, reason: 'google_calendar_not_connected' };
+    }
+    const token = decryptToken(cal.encrypted_access_token);
+    if (!token) return { executed: false, reason: 'missing_token' };
+
+    const action = String(payload.action ?? 'create');
+    if (action === 'cancel' && typeof payload.event_id === 'string' && payload.event_id) {
+      const del = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(payload.event_id)}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
+      );
+      return { executed: del.ok, action: 'cancel', statusCode: del.status };
+    }
+    const eventBody = {
+      summary: String(payload.title ?? 'VozPilot Event'),
+      description: String(payload.description ?? ''),
+      start: { dateTime: String(payload.start_iso ?? '') },
+      end: { dateTime: String(payload.end_iso ?? '') },
+    };
+    const url =
+      action === 'modify' && typeof payload.event_id === 'string' && payload.event_id
+        ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(payload.event_id)}`
+        : 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+    const method = action === 'modify' && payload.event_id ? 'PATCH' : 'POST';
+    const resp = await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(eventBody),
+    });
+    if (!resp.ok) {
+      return { executed: false, action, statusCode: resp.status };
+    }
+    const ev = (await resp.json()) as { id?: string; htmlLink?: string };
+    return { executed: true, action, eventId: ev.id ?? null, htmlLink: ev.htmlLink ?? null };
+  }
+
+  return { authorized: true, actionType };
+}
+
 export async function resolveApproval(
   userId: string,
   approvalId: string,
@@ -186,12 +299,50 @@ export async function resolveApproval(
     }
 
     const decision = input.decision === 'approve';
+    let execResult: Record<string, unknown> | null = null;
+    if (decision && approval.action_type) {
+      try {
+        execResult = await executeApprovedExternalAction(client, userId, approval);
+      } catch (err) {
+        execResult = { error: err instanceof Error ? err.message : String(err) };
+      }
+    } else if (!decision && approval.action_type === 'content.request_external_publication') {
+      const draftId = (approval.action_payload ?? {}).draft_id;
+      if (typeof draftId === 'string') {
+        await client.query(
+          "UPDATE content_drafts SET status = 'draft' WHERE id = $1 AND user_id = $2",
+          [draftId, userId],
+        );
+      }
+    }
+
     await client.query(
       `UPDATE approvals
-       SET status = $3, resolution_note = $4, resolved_at = now()
+       SET status = $3,
+           resolution_note = $4,
+           resolved_at = now(),
+           executed_at = CASE WHEN $5::jsonb IS NOT NULL THEN now() ELSE executed_at END,
+           execution_result = COALESCE($5::jsonb, execution_result)
        WHERE id = $1 AND user_id = $2`,
-      [approvalId, userId, decision ? 'approved' : 'rejected', input.note ?? null],
+      [
+        approvalId,
+        userId,
+        decision ? 'approved' : 'rejected',
+        input.note ?? null,
+        execResult ? JSON.stringify(execResult) : null,
+      ],
     );
+
+    if (approval.agent_task_id) {
+      await client.query(
+        `UPDATE agent_tasks
+         SET status = $3,
+             finished_at = now(),
+             error = CASE WHEN $3 = 'cancelled' THEN 'Rejected by user in Approval Center' ELSE error END
+         WHERE id = $1 AND user_id = $2 AND status = 'waiting'`,
+        [approval.agent_task_id, userId, decision ? 'completed' : 'cancelled'],
+      );
+    }
 
     if (approval.task_id) {
       const newStatus = decision ? 'in_progress' : 'pending';
@@ -222,7 +373,7 @@ export async function resolveApproval(
         type: decision ? 'approval_approved' : 'approval_rejected',
         category: 'approval',
         title: decision ? `Approved: ${approval.title}` : `Rejected: ${approval.title}`,
-        detail: input.note ?? '',
+        detail: input.note ?? (approval.action_type ?? ''),
         agentId: approval.agent_id,
       });
     }

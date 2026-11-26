@@ -1,30 +1,26 @@
-# VozPilot — Phase 2 · VozCore orchestration
+# VozPilot — Phase 3 · Autonomous Multi-Agent AI Workforce
 
 **VozLook Studios · multi-agent AI workforce platform**
 
-VozPilot puts a workforce of specialised AI agents behind a single manager, **VozCore**.
-Phase 1 delivered the complete application foundation (full-stack build, premium UI,
-PostgreSQL persistence, secure auth, honest data). Phase 2 adds the **VozCore AI brain**:
-a real LangGraph orchestration engine that turns natural-language commands into plans,
-delegates them to the eight specialist agents, tracks every step, and returns a
-consolidated report — with real OpenAI calls only, never simulated intelligence.
+VozPilot puts an autonomous workforce of eight specialized AI agents behind a central orchestrator, **VozCore**.
+- **Phase 1** delivered the full-stack application foundation (React 19 + TypeScript + Tailwind v4, Express 5 API, PostgreSQL with Row Level Security, cookie-based JWT auth, and honest zero-fabrication telemetry).
+- **Phase 2** added the **VozCore** orchestration engine (Python + FastAPI + 12-node LangGraph workflow with parallel waves, sequential dependencies, retries, checkpoints, and real OpenAI structured outputs).
+- **Phase 3** implements all **eight specialized AI agents** as modular, database-backed backend components implementing a unified **Common Agent Interface**, paired with centralized inter-agent messaging, encrypted OAuth 2.0 integrations, an isolated code-execution sandbox, human-in-the-loop approval gates, global emergency workforce pause controls, and live agent testing.
 
 ---
 
-## What Phase 2 includes
+## Phase 3 Specialized Agents
 
-| Area | Delivered |
+| Agent | Core Capabilities & Safety Boundaries |
 | --- | --- |
-| **AI Command Center (live)** | Real command submission → VozCore engine: intent analysis (objectives, constraints, deadlines, clarification questions), memory retrieval, structured plan preview, agent selection, dispatch, evaluation, consolidated final response. Conversation history, plan preview, selected agents, live status, activity timeline, task dependency visualization, agent outputs, error surfacing, cancel control — the assistant reply is written by a real execution |
-| **VozCore engine** | Python + FastAPI + LangGraph service with **exactly 12 nodes** (`receive_command → understand_intent → retrieve_memory → create_plan → select_agents → dispatch_tasks → execute_agents → collect_results → evaluate_results → retry_or_reassign → generate_final_response → save_execution_memory`), conditional routing, parallel waves for independent tasks, dependency-ordered sequential tasks, bounded retries (2 attempts) and timeouts (90 s/task, 420 s/execution), persisted execution state, safe resume of interrupted runs |
-| **Agent delegation** | The eight specialists (research, inbox, project, content, finance, schedule, developer, memory) execute only their own task with minimal context; VozCore coordinates, evaluates, retries or reassigns — never does their work. Structured agent↔manager messages (status, result summary, detailed output, errors, timestamps) stored per task/attempt |
-| **Safety** | Server-side API keys only, authenticated endpoints, per-user isolation (RLS), approval checkpoints for sensitive external actions (a task can hold at `waiting` until approved), user cancellation at safe points, detailed activity/event logs, task limits — no external action without authorization |
-| **Memory integration** | Prior project context retrieved into planning prompts; durable results saved to the Memory Center only for successful, non-sensitive executions (user-isolated, categorized, tagged) |
-| **Honesty** | Missing credentials → clear `vozcore_not_configured` configuration error (never a fake plan or reply); model failures → failed execution with the real error; test transport (`VOZCORE_TEST_FAKE_LLM`) is refused when `NODE_ENV=production` and loudly labelled everywhere |
-
-Phase 1 surfaces (Overview, Agent Hub, Task Manager, Workflow Manager, Memory Center,
-Activity Center, Approval Center, Integrations, Analytics, Settings) remain unchanged and
-continue to run on the Node API.
+| **Research Agent** (`research`) | Queries configured web search providers (`TAVILY_API_KEY`, `SERPER_API_KEY`, `BRAVE_SEARCH_API_KEY`, or `SEARCH_API_URL`), fetches public pages with SSRF & `<untrusted_external_data>` fencing, separates verified facts from assumptions, flags conflicting claims, strips unverified URLs, and stores cited reports in `research_reports`. |
+| **Inbox Agent** (`inbox`) | Connects to Gmail REST API v1 via OAuth 2.0 (`AES-256-GCM` encrypted tokens), reads/searches authorized messages, wraps email bodies against prompt injection, categorizes threads, flags urgent messages, drafts replies/follow-ups, and **holds all outbound sends behind explicit Approval Center authorization**. |
+| **Project Agent** (`project`) | Creates and updates projects in `projects` and assigned subtasks in `tasks`, sets priorities/deadlines, tracks milestones, detects overdue/delayed tasks, and produces database-backed progress reports. |
+| **Content Agent** (`content`) | Crafts social posts, captions, marketing strategies, content calendars, articles, product copy, ads, and design briefs aligned to **VozLook Studios** or custom brands; persists editable drafts in `content_drafts`; **requires human approval before external publication**. |
+| **Finance Agent** (`finance`) | Records user-authorized income/expenses (`financial_transactions`) and category/project budgets (`financial_budgets`) with exact `Decimal` math, detects statistical outliers/duplicate charges/budget overruns, and **strictly refuses to execute real payments, wires, purchases, or investments**. |
+| **Schedule Agent** (`schedule`) | Connects to Google Calendar REST API v3 via OAuth 2.0, respects user time zones (`IANA`), detects overlapping event conflicts, computes open focus slots, creates workspace reminders, and **gates external calendar creations/modifications/cancellations behind approval**. |
+| **Developer Agent** (`developer`) | Generates and reviews code, debugs issues, writes unit tests and docs, executes Python snippets in a POSIX `RLIMIT_*` + AST-isolated sandbox (no host env secrets, no network/shell modules, strict wall-time & CPU caps), inspects workspace/authorized GitHub repos, and **requires approval before remote pushes**. |
+| **Memory Agent** (`memory`) | Stores categorized knowledge in `memories`, deduplicates entries, rejects secrets/API keys automatically, retrieves context via semantic/keyword similarity (`pgvector` when available + JSON embedding fallback), searches past executions, and shares authorized context packets via VozCore. |
 
 ---
 
@@ -34,107 +30,51 @@ continue to run on the Node API.
 vozpilot/
 ├── client/          React 19 + TypeScript + Tailwind v4 + Vite (SPA)
 │   └── src/
-│       ├── lib/vozcore.ts                  VozCore client (types + endpoints)
-│       └── components/execution/           ExecutionPanel (plan · waves · timeline · results)
+│       ├── layout/Topbar.tsx               Global Pause All / Resume All control + live pulse
+│       ├── pages/AgentHubPage.tsx          Workforce telemetry + 9 operational agent cards
+│       ├── pages/AgentDetailPage.tsx       6-tab Agent Workspace + Live Test Agent + Draft Studio
+│       ├── pages/IntegrationsPage.tsx      Real OAuth 2.0 PKCE flow + scope & encryption status
+│       ├── pages/ApprovalCenterPage.tsx    Human-in-the-loop gates for Gmail/Calendar/Content/Repo
+│       └── components/execution/           ExecutionPanel (waves · bus messages · artifacts · citations)
 ├── server/          Express 5 + TypeScript (tsx runtime)
 │   └── src/
-│       ├── modules/ auth · agents · tasks · approvals · workflows · memories
-│       │            conversations · integrations · activity · analytics ·
-│       │            settings · search
-│       │            vozcore/  → authenticated reverse proxy to the engine
-│       ├── db/      pool · embedded-postgres · migrations (001, 002) · seeders
-│       └── middleware/  auth (JWT cookies) · errorHandler
-├── vozcore/         Python engine (Phase 2)
-│   ├── vozcore/     config · auth · llm · planning · store · service · api
-│   │                graph/{state,nodes,build}.py   the 12-node LangGraph workflow
-│   │                agents_registry.py · schemas.py · errors.py · db.py
-│   └── tests/       22-test orchestration suite (pytest) + live OpenAI test
-├── scripts/         smoke-test.mjs (110-check acceptance suite)
-│                    visual-qa.mjs · visual-qa-vozcore.mjs (screenshot harnesses)
-└── .env             local secrets (git-ignored) — see .env.example
+│       ├── lib/tokenCrypto.ts              Interoperable AES-256-GCM OAuth token encryption
+│       ├── modules/                        auth · agents · tasks · approvals · workflows · memories
+│       │                                   conversations · integrations (OAuth 2.0 PKCE) · activity
+│       │                                   analytics · settings · search · vozcore (reverse proxy)
+│       └── db/migrations/                  001_initial_schema · 002_vozcore · 003_phase3_agents
+├── vozcore/         Python 3.11 + FastAPI + LangGraph engine
+│   ├── vozcore/
+│   │   ├── agents/                         base.py + 8 modular specialist agents + registry.py
+│   │   ├── security.py                     AES-256-GCM crypto, SSRF guard, prompt-injection fencing
+│   │   ├── sandbox.py                      AST + POSIX RLIMIT isolated Python runner & path jail
+│   │   ├── external_providers.py           Search, Gmail, Google Calendar & GitHub clients
+│   │   ├── communication.py                Centralized agent_messages, logs & usage persistence
+│   │   ├── pricing.py                      Per-model token cost calculator
+│   │   └── graph/{state,nodes,build}.py    12-node LangGraph workflow + atomic task claim guard
+│   └── tests/                              39 automated pytest tests (Phase 2 + Phase 3)
+└── scripts/         smoke-test.mjs (129-assertion full-stack acceptance suite)
 ```
 
-- **Database:** PostgreSQL (embedded zero-config by default; `DATABASE_URL` for an
-  external instance). Phase 2 adds `executions`, `execution_steps`, `agent_tasks`,
-  `agent_results`, `execution_events`, `model_usage` (+ `messages.execution_id`), all
-  with user-level **Row Level Security**. Migrations are idempotent SQL files applied at
-  boot; the app role receives table **and sequence** grants on every start.
-- **Auth contract:** the Node proxy authenticates the request and forwards the session
-  to the engine (`Cookie` + `x-vozpilot-user`); the engine verifies the same JWT secret.
-- **API contract:** all success bodies are `{ data }`, errors `{ error: { code, message,
-  details } }` — the VozCore endpoints follow the same envelope.
-- **LLM:** OpenAI API key read **only** from server-side env (`OPENAI_API_KEY`,
-  `OPENAI_MODEL`, optional `OPENAI_BASE_URL`); structured outputs for intent/plan/agent
-  results/evaluation/final response via `chat.completions.parse`; usage recorded in
-  `model_usage`; rate-limit/error handling with bounded retries.
+---
 
-### VozCore endpoints (authenticated, proxied at `/api/vozcore/*`)
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| POST | `/api/vozcore/command` | Accept a command → start a real execution (returns `{ execution }`) |
-| POST | `/api/vozcore/plan` | Plan preview only — no execution persisted |
-| GET | `/api/vozcore/executions` | List the user's executions (optional `?conversationId=`) |
-| GET | `/api/vozcore/executions/{id}` | Full detail: execution, steps, tasks, results, events (`?sinceEventId=` for polling) |
-| POST | `/api/vozcore/executions/{id}/cancel` | Request cancellation (idempotent) |
-| GET | `/api/vozcore/agents` | Coordinator + 8 specialists with capabilities and honest operational state |
-| GET | `/api/vozcore/health` | Engine status, LLM mode, 12-node graph, limits |
-
-## Getting started
+## Getting Started
 
 ```bash
 npm install
 npm run vozcore:install     # create vozcore/.venv + install Python deps
-cp .env.example .env        # then edit secrets (server bootstraps a .env if missing)
-# set OPENAI_API_KEY=... in .env — the engine refuses to fake results without it
+cp .env.example .env        # server also provisions a secure local .env if absent
 
-npm run dev                 # API :4000 + Vite :5173 (proxies /api)
-npm run vozcore             # start the VozCore engine on :8001 (separate terminal)
+npm run build               # typecheck server + client and build SPA bundle
+npm start                   # Node API + built React SPA on http://0.0.0.0:4000
+npm run vozcore             # Python VozCore engine on http://127.0.0.1:8001
 ```
 
-Production preview (single port, serves built client + API; start the engine alongside):
+## Verification & Test Suites
 
 ```bash
-npm run build
-npm start                   # http://localhost:4000
-npm run vozcore             # engine :8001 — without a key it reports
-                            # vozcore_not_configured instead of pretending
+npm run typecheck           # TypeScript strict check across server & client
+npm run build               # Full production build
+npm run test:smoke          # 129-assertion end-to-end smoke suite (Phase 1 + 2 + 3)
+npm run vozcore:test        # 39-test pytest suite (all 8 agents, sandbox, permissions, RLS, bus)
 ```
-
-Environment (see `.env.example`): `PORT`, `NODE_ENV`, `JWT_SECRET`,
-`REFRESH_TOKEN_SECRET`, `DATABASE_URL` (optional — embedded PostgreSQL otherwise),
-`VOZCORE_PORT`, `OPENAI_API_KEY`, `OPENAI_MODEL`, optional `OPENAI_BASE_URL` and
-`VOZCORE_MAX_TASKS` / `VOZCORE_MAX_TASK_ATTEMPTS` / `VOZCORE_TASK_TIMEOUT` /
-`VOZCORE_EXECUTION_TIMEOUT`. **Never commit `.env`**; keys never reach the browser.
-
-## Tests
-
-```bash
-npm run typecheck           # client + server (tsc --noEmit)
-npm test                    # 110-assertion acceptance suite (server + engine running)
-npm run vozcore:test        # 22-test orchestration suite (pytest, real schema + graph)
-npm run vozcore:test:live   # live OpenAI round-trip (requires OPENAI_API_KEY)
-node scripts/visual-qa.mjs           # Phase 1 screenshots
-node scripts/visual-qa-vozcore.mjs   # end-to-end execution screenshots (test transport)
-```
-
-The acceptance suite covers registration/login/deep links, agent seeds, task CRUD +
-approval loop, workflows, memories, conversation persistence (**asserts no assistant
-messages are fabricated without an engine run**), activity log, integrations honesty,
-search, settings, refresh rotation, logout, cross-tenant isolation — plus the VozCore
-surface: health envelope, 12-node graph, auth (401), the8-agent catalogue, honest
-503 `vozcore_not_configured` without credentials, 422 validation, execution listing.
-
-The pytest suite covers: single-agent, multi-agent parallel, sequential dependencies,
-clarification, plan preview (no side effects), approval checkpoints, missing
-credentials, model-failure honesty, retry then success, retry exhaustion, cancellation
-mid-flight, unauthorized access, user isolation, memory retrieval/save/sensitive-skip.
-`test_live_openai.py` verifies real OpenAI connectivity when a key is present
-(`-m live`); in environments without outbound access to `api.openai.com` it is skipped
-and the configuration/error paths are what's verified.
-
-## Phase 3 (not in this build)
-
-Workflow run engine, OAuth connection flows for the five integrations, and any
-functionality beyond this phase's scope. Surfaces that depend on them say so honestly
-and light up against these backends without rework.

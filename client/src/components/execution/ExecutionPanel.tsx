@@ -7,8 +7,10 @@ import {
   ChevronRight,
   CircleSlash,
   Clock3,
+  ExternalLink,
   GitBranch,
   Loader2,
+  MessageSquareShare,
   PauseCircle,
   XCircle,
   Zap,
@@ -18,7 +20,6 @@ import {
   STEP_LABELS,
   TIMELINE_EVENTS,
   isLiveStatus,
-  type Execution,
   type ExecutionDetail,
   type ExecutionStatus,
   type ExecutionTask,
@@ -43,7 +44,7 @@ export const EXECUTION_STATUS_META: Record<
 const TASK_STATUS_META: Record<ExecutionTask['status'], { label: string; className: string }> = {
   pending: { label: 'Pending', className: 'text-mist-400' },
   running: { label: 'Running', className: 'text-[var(--accent)]' },
-  waiting: { label: 'Waiting', className: 'text-gild-400' },
+  waiting: { label: 'Waiting Approval', className: 'text-gild-400' },
   completed: { label: 'Completed', className: 'text-verdant-400' },
   failed: { label: 'Failed', className: 'text-rosh-400' },
   cancelled: { label: 'Cancelled', className: 'text-mist-500' },
@@ -77,7 +78,8 @@ interface ExecutionPanelProps {
 
 /**
  * Live execution view: plan preview, agent assignment, wave/dependency
- * layout, node progress, event timeline, results and final response.
+ * layout, node progress, inter-agent messages, event timeline, structured
+ * artifacts/citations, and final response.
  */
 export function ExecutionPanel({ detail, onCancel, cancelling = false }: ExecutionPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -167,7 +169,7 @@ export function ExecutionPanel({ detail, onCancel, cancelling = false }: Executi
 
       {collapsed ? null : (
         <div className="flex flex-col gap-4 px-4 py-4">
-          {/* Failure / clarification notices — honest error surfacing */}
+          {/* Failure / clarification notices */}
           {execution.status === 'failed' && execution.error ? (
             <div className="flex items-start gap-2.5 rounded-xl border border-rosh-500/30 bg-rosh-500/8 px-3.5 py-3">
               <XCircle size={15} className="mt-0.5 shrink-0 text-rosh-400" />
@@ -255,7 +257,7 @@ export function ExecutionPanel({ detail, onCancel, cancelling = false }: Executi
             </section>
           ) : null}
 
-          {/* Tasks by wave — parallel groups + dependency edges */}
+          {/* Tasks by wave */}
           {waves.length > 0 ? (
             <section>
               <p className="micro-label">Subtasks</p>
@@ -314,6 +316,28 @@ export function ExecutionPanel({ detail, onCancel, cancelling = false }: Executi
             </section>
           ) : null}
 
+          {/* Centralized Inter-Agent Messages */}
+          {detail.messages && detail.messages.length > 0 ? (
+            <section>
+              <p className="micro-label">Centralized Agent Coordination ({detail.messages.length})</p>
+              <div className="mt-2 flex max-h-40 flex-col gap-1.5 overflow-y-auto rounded-xl border border-white/8 bg-black/20 p-3">
+                {detail.messages.map((msg) => (
+                  <div key={msg.id} className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <span className="inline-flex items-center gap-1.5 text-mist-300">
+                      <MessageSquareShare size={11} className="text-azure-400" />
+                      <strong>{msg.senderKey}</strong> → <strong>{msg.recipientKey}</strong>
+                      <span className="rounded bg-white/6 px-1.5 py-0.5 font-mono text-[9.5px] text-mist-400">
+                        {msg.messageType}
+                      </span>
+                      <span className="truncate text-mist-400">{msg.subject}</span>
+                    </span>
+                    <span className="text-[10px] text-mist-600">{formatRelative(msg.createdAt)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
           {/* Timeline */}
           {timeline.length > 0 ? (
             <section>
@@ -344,7 +368,7 @@ export function ExecutionPanel({ detail, onCancel, cancelling = false }: Executi
             </section>
           ) : null}
 
-          {/* Agent results */}
+          {/* Agent results with artifacts & citations */}
           {detail.results.length > 0 ? (
             <section>
               <p className="micro-label">Agent outputs</p>
@@ -359,14 +383,29 @@ export function ExecutionPanel({ detail, onCancel, cancelling = false }: Executi
                         <Bot size={12} className="text-[var(--accent)]" />
                         <span className="font-medium">{result.agent_key}</span>
                         <span className="text-mist-600">· {result.taskKey} · attempt {result.attempt}</span>
+                        {result.durationMs != null ? (
+                          <span className="font-mono text-[10px] text-mist-600">{result.durationMs}ms</span>
+                        ) : null}
                       </span>
                       <span
                         className={cn(
                           'text-[11px]',
-                          result.status === 'completed' ? 'text-verdant-400' : 'text-rosh-400',
+                          result.status === 'completed'
+                            ? 'text-verdant-400'
+                            : result.status === 'waiting_approval'
+                              ? 'text-gild-300'
+                              : result.status === 'cancelled'
+                                ? 'text-mist-500'
+                                : 'text-rosh-400',
                         )}
                       >
-                        {result.status === 'completed' ? 'Completed' : 'Failed'}
+                        {result.status === 'completed'
+                          ? 'Completed'
+                          : result.status === 'waiting_approval'
+                            ? 'Waiting Approval'
+                            : result.status === 'cancelled'
+                              ? 'Cancelled'
+                              : 'Failed'}
                       </span>
                     </summary>
                     <div className="mt-2 border-t border-white/6 pt-2">
@@ -375,6 +414,38 @@ export function ExecutionPanel({ detail, onCancel, cancelling = false }: Executi
                         <p className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-black/30 p-2.5 text-[11.5px] leading-relaxed text-mist-400">
                           {result.detailed_output}
                         </p>
+                      ) : null}
+                      {result.artifacts && result.artifacts.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {result.artifacts.map((art, idx) => (
+                            <span
+                              key={idx}
+                              className="rounded-md border border-white/10 bg-white/4 px-2 py-1 text-[10.5px] text-mist-300"
+                            >
+                              <strong className="font-mono uppercase text-[var(--accent)]">{art.kind}:</strong>{' '}
+                              {art.title}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {result.source_references && result.source_references.length > 0 ? (
+                        <div className="mt-2 flex flex-col gap-1">
+                          {result.source_references.map((src, idx) => (
+                            <div key={idx} className="flex items-center justify-between gap-2 text-[11px] text-mist-400">
+                              <span className="truncate">• {src.title}</span>
+                              {src.url ? (
+                                <a
+                                  href={src.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex shrink-0 items-center gap-1 text-azure-400 hover:underline"
+                                >
+                                  Citation <ExternalLink size={10} />
+                                </a>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
                       ) : null}
                       {result.missing_information.length > 0 ? (
                         <p className="mt-2 text-[11px] text-gild-400">
@@ -407,7 +478,7 @@ function EventPayload({ event, payload }: { event: string; payload: Record<strin
   } else if (event === 'tasks_dispatched') {
     const byAgent = payload.byAgent as Record<string, number> | undefined;
     if (byAgent) text = Object.entries(byAgent).map(([key, count]) => `${key}×${count}`).join(', ');
-  } else if (event === 'task_completed' || event === 'task_failed') {
+  } else if (event === 'task_completed' || event === 'task_failed' || event === 'task_waiting') {
     const summary = (payload.summary as string) || '';
     const errors = (payload.errors as string[]) || [];
     text = summary || errors.join('; ');

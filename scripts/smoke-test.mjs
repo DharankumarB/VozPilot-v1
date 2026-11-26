@@ -471,6 +471,80 @@ async function main() {
   const vcCross = await new Session().get('/api/vozcore/executions/00000000-0000-0000-0000-000000000000');
   ok(vcCross.status === 401, 'Execution detail requires authentication (401)');
 
+  /* ------------------------------------------------------ phase 3 workforce */
+  section('Phase 3 Autonomous Multi-Agent Workforce');
+
+  const monRes = await anon.get('/api/vozcore/monitoring');
+  const mon = dataOf(monRes);
+  ok(monRes.status === 200 && mon?.agentsPaused === false, 'GET /api/vozcore/monitoring returns live unpaused state');
+  ok(Array.isArray(mon?.agents) && mon.agents.length === 8, 'Monitoring tracks all 8 specialized agents');
+  ok(mon?.usage?.totalTokens === 0 && mon?.executions?.total === 0, 'Fresh workspace has zero fabricated execution/token stats');
+
+  const detailRes = await anon.get(`/api/vozcore/agents/${research.id}`);
+  const detail = dataOf(detailRes);
+  ok(detailRes.status === 200 && detail?.agent?.key === 'research', 'GET /api/vozcore/agents/:id returns specialist detail');
+  ok(detail?.capabilities?.length >= 3 && detail?.tools?.length >= 2 && detail?.permissions?.length >= 2, 'Capabilities, private tools & permissions seeded in PostgreSQL');
+  ok(detail?.taskHistory?.length === 0 && detail?.logs?.length === 0, 'No fabricated task history or audit logs');
+
+  const rtRes = await anon.patch(`/api/vozcore/agents/${research.id}/runtime`, {
+    customInstructions: 'Focus on VozLook Studios verified enterprise benchmarks.',
+    timeoutSeconds: 75,
+    maxRetries: 2,
+  });
+  ok(
+    rtRes.status === 200 && dataOf(rtRes)?.agent?.timeoutSeconds === 75,
+    'PATCH /api/vozcore/agents/:id/runtime persists custom instructions & timeout',
+  );
+
+  const firstCapKey = detail.capabilities[0].capabilityKey;
+  const capRes = await anon.patch(`/api/vozcore/agents/${research.id}/capabilities/${firstCapKey}`, { enabled: false });
+  ok(
+    capRes.status === 200 && dataOf(capRes)?.capabilities?.find((c) => c.capabilityKey === firstCapKey)?.enabled === false,
+    'Capability toggle persisted',
+  );
+
+  const firstToolKey = detail.tools[0].toolKey;
+  const toolRes = await anon.patch(`/api/vozcore/agents/${research.id}/tools/${firstToolKey}`, { requiresApproval: true });
+  ok(
+    toolRes.status === 200 && dataOf(toolRes)?.tools?.find((t) => t.toolKey === firstToolKey)?.requiresApproval === true,
+    'Tool approval gate toggle persisted',
+  );
+
+  const permRes = await anon.patch(`/api/vozcore/agents/${research.id}/permissions/execute`, { rateLimitPerHour: 30 });
+  ok(
+    permRes.status === 200 && dataOf(permRes)?.permissions?.find((p) => p.permissionKey === 'execute')?.rateLimitPerHour === 30,
+    'Permission rate limit persisted',
+  );
+
+  const disableRes = await anon.patch(`/api/agents/${research.id}`, { enabled: false });
+  ok(disableRes.status === 200 && dataOf(disableRes)?.enabled === false, 'Agent disable persisted via Node API');
+  const reenableRes = await anon.patch(`/api/agents/${research.id}`, { enabled: true });
+  ok(reenableRes.status === 200 && dataOf(reenableRes)?.enabled === true, 'Agent re-enable persisted');
+
+  const pauseAllRes = await anon.post('/api/vozcore/agents/pause-all', {});
+  ok(pauseAllRes.status === 200 && dataOf(pauseAllRes)?.agentsPaused === true, 'Global Pause All Agents engaged');
+
+  const cmdWhilePaused = await anon.post('/api/vozcore/command', { command: 'Run research while globally paused' });
+  ok(cmdWhilePaused.status === 409, 'Global Pause blocks new VozCore commands (409)');
+
+  const testWhilePaused = await anon.post('/api/vozcore/agents/research/test', { prompt: 'Test specialist while paused' });
+  ok(testWhilePaused.status === 409, 'Global Pause blocks direct Test Agent runs (409)');
+
+  const resumeAllRes = await anon.post('/api/vozcore/agents/resume-all', {});
+  ok(resumeAllRes.status === 200 && dataOf(resumeAllRes)?.agentsPaused === false, 'Global Resume All Agents restores operation');
+
+  const testUnconf = await anon.post('/api/vozcore/agents/research/test', { prompt: 'Verify honest unconfigured LLM error' });
+  ok(
+    testUnconf.status === 503 && testUnconf.json?.error?.code === 'vozcore_not_configured',
+    'Direct Test Agent without OpenAI key returns honest 503 (never mocked in production)',
+  );
+
+  const draftsRes = await anon.get('/api/vozcore/content-drafts');
+  ok(draftsRes.status === 200 && Array.isArray(dataOf(draftsRes)) && dataOf(draftsRes).length === 0, 'Content drafts endpoint returns honest empty state');
+
+  const crossDetail = await other.get(`/api/vozcore/agents/${research.id}`);
+  ok(crossDetail.status === 404, 'Cross-tenant specialist detail denied by RLS (404)');
+
   /* ---------------------------------------------------------------- logout */
   section('Logout');
   const logout = await anon.post('/api/auth/logout');

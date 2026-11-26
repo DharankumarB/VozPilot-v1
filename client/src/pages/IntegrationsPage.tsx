@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Info, Plug, RefreshCw, Unlink } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Info, Lock, Plug, RefreshCw, Unlink } from 'lucide-react';
 import { api } from '../lib/api';
 import type { Integration, IntegrationProvider } from '../lib/types';
 import { useToast } from '../context/ToastContext';
 import { errorMessage } from '../context/AuthContext';
 import { PageHeader } from '../components/PageHeader';
 import { Button } from '../components/ui/Button';
-import { StatusPill } from '../components/ui/Badge';
+import { StatusPill, Badge } from '../components/ui/Badge';
 import { EmptyState, ListSkeleton } from '../components/ui/Feedback';
 import { PROVIDER_META } from '../lib/constants';
 import { cn, formatRelative } from '../lib/utils';
@@ -21,6 +22,7 @@ const STATUS_DISPLAY: Record<Integration['status'], { label: string; text: strin
 export function IntegrationsPage() {
   useDocumentTitle('Integrations · VozPilot');
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [integrations, setIntegrations] = useState<Integration[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -34,14 +36,27 @@ export function IntegrationsPage() {
       .catch((caught) => setLoadError(errorMessage(caught)));
   }, []);
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    load();
+    const connected = searchParams.get('connected') as IntegrationProvider | null;
+    if (connected && PROVIDER_META[connected]) {
+      toast.success(
+        `${PROVIDER_META[connected].name} connected`,
+        'OAuth 2.0 verified and tokens encrypted server-side.',
+      );
+      searchParams.delete('connected');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [load, searchParams, setSearchParams, toast]);
 
   const connect = async (provider: IntegrationProvider) => {
     setBusyProvider(provider);
     try {
-      await api.post<Integration>(`/api/integrations/${provider}/connect`);
-      // The server never reaches this in Phase 1 — connect always reports the
-      // honest failure state — but keep the flow truthful if that changes.
+      const response = await api.post<Integration>(`/api/integrations/${provider}/connect`);
+      if (response.authUrl) {
+        window.location.assign(response.authUrl);
+        return;
+      }
       load();
     } catch (caught) {
       const message = errorMessage(caught);
@@ -69,7 +84,7 @@ export function IntegrationsPage() {
     <div className="anim-enter flex flex-col gap-5">
       <PageHeader
         title="Integrations"
-        subtitle="External services your agents will operate once OAuth flows are configured."
+        subtitle="OAuth 2.0 authorizations for Inbox Agent (Gmail), Schedule Agent (Google Calendar), Developer Agent (GitHub), and workspace tools."
         actions={
           <Button variant="secondary" size="sm" icon={<RefreshCw size={13} />} onClick={load}>
             Refresh status
@@ -77,19 +92,23 @@ export function IntegrationsPage() {
         }
       />
 
-      {/* Honesty notice */}
+      {/* Honesty + encryption notice */}
       <div className="flex items-start gap-3 rounded-2xl border border-azure-500/25 bg-azure-500/8 px-4 py-3.5">
         <Info size={15} className="mt-0.5 shrink-0 text-azure-400" />
         <div className="text-xs leading-relaxed text-mist-400">
-          <strong className="font-semibold text-azure-400">Honest connection status:</strong> a service
-          shows <em>Connected</em> only after its real OAuth flow succeeds. Credentials live exclusively
-          on the server (environment variables) and are never sent to the browser. Until credentials and
-          callbacks are configured, every provider correctly reports <em>Not connected</em>.
+          <strong className="font-semibold text-azure-400">Verified OAuth 2.0 + Encrypted Storage:</strong> a
+          provider shows <em>Connected</em> only after completing a real PKCE/state OAuth callback. Access and
+          refresh tokens are encrypted at rest with <code className="font-mono text-mist-300">AES-256-GCM</code>{' '}
+          and are never exposed to the browser or agent code sandboxes.
         </div>
       </div>
 
       {loadError && !integrations ? (
-        <EmptyState title="Couldn't load integrations" description={loadError} action={<Button onClick={load}>Retry</Button>} />
+        <EmptyState
+          title="Couldn't load integrations"
+          description={loadError}
+          action={<Button onClick={load}>Retry</Button>}
+        />
       ) : !integrations ? (
         <ListSkeleton rows={3} />
       ) : (
@@ -112,7 +131,14 @@ export function IntegrationsPage() {
                   >
                     <Icon size={20} />
                   </span>
-                  <StatusPill {...display} />
+                  <div className="flex items-center gap-1.5">
+                    {integration.oauthConfigured ? (
+                      <Badge className="border border-verdant-500/25 bg-verdant-500/8 text-verdant-400">
+                        OAuth ready
+                      </Badge>
+                    ) : null}
+                    <StatusPill {...display} />
+                  </div>
                 </div>
 
                 <div className="mt-3.5">
@@ -124,44 +150,63 @@ export function IntegrationsPage() {
                 </div>
 
                 {integration.accountEmail ? (
-                  <p className="mt-3 rounded-lg bg-white/4 px-3 py-2 text-[11.5px] text-mist-300">
-                    Signed in as {integration.accountEmail}
-                  </p>
+                  <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-white/4 px-3 py-2 text-[11.5px] text-mist-300">
+                    <span className="truncate">Authorized as {integration.accountEmail}</span>
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[10px] text-verdant-400">
+                      <Lock size={10} /> Encrypted
+                    </span>
+                  </div>
+                ) : null}
+
+                {integration.scopes.length > 0 ? (
+                  <div className="mt-2.5 flex flex-wrap gap-1">
+                    {integration.scopes.slice(0, 4).map((scope) => (
+                      <span
+                        key={scope}
+                        className="max-w-full truncate rounded bg-white/5 px-1.5 py-0.5 font-mono text-[9.5px] text-mist-500"
+                        title={scope}
+                      >
+                        {scope.replace('https://www.googleapis.com/auth/', '')}
+                      </span>
+                    ))}
+                  </div>
                 ) : null}
 
                 {integration.lastError ? (
-                  <p className="mt-3 rounded-lg border border-lume-500/25 bg-lume-500/8 px-3 py-2 text-[11.5px] leading-relaxed text-lume-400/90">
+                  <p className="mt-3 rounded-lg border border-gild-500/25 bg-gild-500/8 px-3 py-2 text-[11.5px] leading-relaxed text-gild-300">
                     {integration.lastError}
                   </p>
                 ) : null}
 
-                <div className="mt-4 flex items-center justify-between border-t border-white/7 pt-3.5">
-                  <span className="text-[11px] text-mist-600">
-                    {integration.status === 'connected'
-                      ? `Connected ${formatRelative(integration.connectedAt)}`
-                      : `Checked ${formatRelative(integration.updatedAt)}`}
-                  </span>
-                  {integration.status === 'connected' ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      icon={<Unlink size={13} />}
-                      loading={busy}
-                      onClick={() => void disconnect(integration.provider)}
-                    >
-                      Disconnect
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      icon={<Plug size={13} />}
-                      loading={busy}
-                      onClick={() => void connect(integration.provider)}
-                    >
-                      Connect
-                    </Button>
-                  )}
+                <div className="mt-auto pt-4">
+                  <div className="flex items-center justify-between border-t border-white/7 pt-3.5">
+                    <span className="text-[11px] text-mist-600">
+                      {integration.status === 'connected'
+                        ? `Connected ${formatRelative(integration.connectedAt)}`
+                        : `Checked ${formatRelative(integration.updatedAt)}`}
+                    </span>
+                    {integration.status === 'connected' ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={<Unlink size={13} />}
+                        loading={busy}
+                        onClick={() => void disconnect(integration.provider)}
+                      >
+                        Disconnect
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={<Plug size={13} />}
+                        loading={busy}
+                        onClick={() => void connect(integration.provider)}
+                      >
+                        Connect OAuth
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </article>
             );
@@ -171,22 +216,26 @@ export function IntegrationsPage() {
 
       {/* Setup guide */}
       <div className="glass rounded-2xl p-5">
-        <h2 className="text-sm font-semibold text-mist-100">Enabling a real connection</h2>
+        <h2 className="text-sm font-semibold text-mist-100">Enabling a real OAuth 2.0 connection</h2>
         <ol className="mt-3 flex flex-col gap-2 text-xs leading-relaxed text-mist-400 sm:grid sm:grid-cols-3 sm:gap-4">
           <li className="rounded-xl border border-white/8 bg-white/3 px-3.5 py-3">
             <span className="mb-1 block font-mono text-[10px] font-bold text-[var(--accent)]">STEP 1</span>
-            Register an OAuth application with the provider (Google, GitHub or Notion) and note the
-            client ID and secret.
+            Register an OAuth 2.0 client with Google, GitHub, or Notion and add callback{' '}
+            <code className="font-mono text-[10.5px] text-mist-300">
+              /api/integrations/oauth/&lt;provider&gt;/callback
+            </code>
+            .
           </li>
           <li className="rounded-xl border border-white/8 bg-white/3 px-3.5 py-3">
             <span className="mb-1 block font-mono text-[10px] font-bold text-[var(--accent)]">STEP 2</span>
-            Add them to the server <code className="font-mono text-[11px] text-gild-400">.env</code>{' '}
-            file — see <code className="font-mono text-[11px] text-gild-400">.env.example</code>.
+            Set <code className="font-mono text-[11px] text-gild-400">GOOGLE_CLIENT_ID</code> /{' '}
+            <code className="font-mono text-[11px] text-gild-400">GITHUB_CLIENT_ID</code> and secrets in the
+            server <code className="font-mono text-[11px] text-gild-400">.env</code> file.
           </li>
           <li className="rounded-xl border border-white/8 bg-white/3 px-3.5 py-3">
             <span className="mb-1 block font-mono text-[10px] font-bold text-[var(--accent)]">STEP 3</span>
-            Add the authorization callback to the server .env — the connection activates as soon
-            as the OAuth flow is wired up.
+            Click <strong>Connect OAuth</strong> above — tokens are exchanged via PKCE, encrypted server-side,
+            and restricted to minimum scopes.
           </li>
         </ol>
       </div>
